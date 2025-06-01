@@ -296,3 +296,34 @@ func (s *AssetsService) CheckinContext(ctx context.Context, id int, checkin map[
 
 	return &response, resp, nil
 }
+
+// GetAssetBySerial fetches a single asset by its serial number.
+//
+// serial is the manufacturer's serial number of the asset to retrieve.
+//
+// Snipe-IT API docs: https://snipe-it.readme.io/reference/hardware-by-serial
+func (s *AssetsService) GetAssetBySerial(serial string) (*AssetResponse, *http.Response, error) {
+	return s.GetAssetBySerialContext(context.Background(), serial)
+}
+
+// GetAssetBySerialContext fetches a single asset by its serial number with the provided context.
+//
+// ctx is the context for the request.
+// serial is the manufacturer's serial number of the asset to retrieve.
+//
+// Snipe-IT API docs: https://snipe-it.readme.io/reference/hardware-by-serial
+func (s *AssetsService) GetAssetBySerialContext(ctx context.Context, serial string) (*AssetResponse, *http.Response, error) {
+	u := fmt.Sprintf("api/v1/hardware/byserial/%s", serial)
+	req, err := s.client.newRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	var asset AssetResponse
+	resp, err := s.client.Do(req, &asset)
+	if err != nil {
+		return nil, resp, err
+	}
+
+	return &asset, resp, nil
+}

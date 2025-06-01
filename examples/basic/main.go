@@ -111,6 +111,26 @@ func main() {
 		}
 	}
 	
+	// Demonstrate searching for an asset by serial number
+	fmt.Printf("\nSearching for asset by serial number...\n")
+	// Note: Replace "EXAMPLE-SERIAL" with an actual serial number from your Snipe-IT instance
+	serialToSearch := "EXAMPLE-SERIAL"
+	assetBySerial, resp, err := client.Assets.GetAssetBySerial(serialToSearch)
+	if err != nil {
+		// Check if it's a 404 not found error
+		if resp != nil && resp.StatusCode == 404 {
+			fmt.Printf("Asset with serial number %s not found\n", serialToSearch)
+		} else {
+			fmt.Printf("Error searching for asset by serial: %v\n", err)
+		}
+	} else {
+		fmt.Printf("Found asset by serial number:\n")
+		fmt.Printf("  Name: %s\n", assetBySerial.Payload.Name)
+		fmt.Printf("  Tag: %s\n", assetBySerial.Payload.AssetTag)
+		fmt.Printf("  Serial: %s\n", assetBySerial.Payload.Serial)
+		fmt.Printf("  Model: %s\n", assetBySerial.Payload.Model.Name)
+	}
+	
 	// Demonstrate how to make concurrent API requests with rate limiting
 	fmt.Printf("\nMaking multiple concurrent API requests (rate limited)...\n")
 	makeConcurrentRequests(client, 20)

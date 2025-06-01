@@ -563,3 +563,163 @@ func TestAssetsCheckin(t *testing.T) {
 			asset.Payload.Available, true)
 	}
 }
+
+func TestAssetsGetAssetBySerial(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	mux.HandleFunc("/api/v1/hardware/byserial/SN-12345", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, http.MethodGet)
+		testHeader(t, r, "Accept", "application/json")
+		testHeader(t, r, "Authorization", "Bearer test-token")
+		fmt.Fprint(w, `{
+			"status": "success",
+			"payload": {
+				"id": 1,
+				"name": "Asset 1",
+				"asset_tag": "AT-1",
+				"serial": "SN-12345",
+				"model": {
+					"id": 1,
+					"name": "Model 1"
+				},
+				"status_label": {
+					"id": 1,
+					"name": "Ready to Deploy",
+					"status_type": "deployable",
+					"status_meta": "deployable"
+				},
+				"category": {
+					"id": 1,
+					"name": "Laptop"
+				},
+				"manufacturer": {
+					"id": 1,
+					"name": "Manufacturer 1"
+				},
+				"created_at": "2023-01-01T12:00:00.000000Z",
+				"updated_at": "2023-01-01T12:00:00.000000Z",
+				"available": true,
+				"deleted": false
+			}
+		}`)
+	})
+
+	asset, _, err := client.Assets.GetAssetBySerial("SN-12345")
+	if err != nil {
+		t.Fatalf("Assets.GetAssetBySerial returned error: %v", err)
+	}
+
+	if asset.Status != "success" {
+		t.Errorf("Assets.GetAssetBySerial returned Status = %s, expected %s", asset.Status, "success")
+	}
+
+	createdAt, _ := time.Parse(time.RFC3339, "2023-01-01T12:00:00.000000Z")
+	updatedAt, _ := time.Parse(time.RFC3339, "2023-01-01T12:00:00.000000Z")
+	
+	expectedAsset := Asset{
+		CommonFields: CommonFields{
+			ID:        1,
+			Name:      "Asset 1",
+			CreatedAt: createdAt,
+			UpdatedAt: updatedAt,
+			Available: true,
+			Deleted:   false,
+		},
+		AssetTag: "AT-1",
+		Serial:   "SN-12345",
+		Model: Model{
+			CommonFields: CommonFields{
+				ID:   1,
+				Name: "Model 1",
+			},
+		},
+		StatusLabel: StatusLabel{
+			CommonFields: CommonFields{
+				ID:   1,
+				Name: "Ready to Deploy",
+			},
+			StatusType: "deployable",
+			StatusMeta: "deployable",
+		},
+		Category: Category{
+			CommonFields: CommonFields{
+				ID:   1,
+				Name: "Laptop",
+			},
+		},
+		Manufacturer: Manufacturer{
+			CommonFields: CommonFields{
+				ID:   1,
+				Name: "Manufacturer 1",
+			},
+		},
+	}
+
+	if !reflect.DeepEqual(asset.Payload, expectedAsset) {
+		t.Errorf("Assets.GetAssetBySerial returned = %+v, expected %+v", asset.Payload, expectedAsset)
+	}
+}
+
+func TestAssetsGetAssetBySerialNotFound(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	mux.HandleFunc("/api/v1/hardware/byserial/INVALID-SERIAL", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, http.MethodGet)
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{
+			"status": "error",
+			"message": "Asset not found."
+		}`)
+	})
+
+	_, resp, err := client.Assets.GetAssetBySerial("INVALID-SERIAL")
+	if err == nil {
+		t.Fatal("Assets.GetAssetBySerial expected error for not found, got none")
+	}
+
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("Assets.GetAssetBySerial returned status code = %d, expected %d", resp.StatusCode, http.StatusNotFound)
+	}
+
+	errorResponse, ok := err.(*ErrorResponse)
+	if !ok {
+		t.Fatalf("Assets.GetAssetBySerial error type = %T, expected *ErrorResponse", err)
+	}
+
+	if errorResponse.Message != "Asset not found." {
+		t.Errorf("ErrorResponse.Message = %q, expected %q", errorResponse.Message, "Asset not found.")
+	}
+}
+
+func TestAssetsGetAssetBySerialContext(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	mux.HandleFunc("/api/v1/hardware/byserial/SN-CONTEXT", func(w http.ResponseWriter, r *http.Request) {
+		// Simulate a delay to test context timeout
+		time.Sleep(50 * time.Millisecond)
+		testMethod(t, r, http.MethodGet)
+		fmt.Fprint(w, `{
+			"status": "success",
+			"payload": {
+				"id": 1,
+				"name": "Asset 1",
+				"asset_tag": "AT-1",
+				"serial": "SN-CONTEXT"
+			}
+		}`)
+	})
+
+	// Test context timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, _, err := client.Assets.GetAssetBySerialContext(ctx, "SN-CONTEXT")
+	if err == nil {
+		t.Error("Expected context timeout error, got nil")
+	} else if err != context.DeadlineExceeded {
+		t.Errorf("Expected context.DeadlineExceeded error, got %v", err)
+	}
+}
