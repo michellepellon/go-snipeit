@@ -1,7 +1,75 @@
 // Package snipeit provides data models for interacting with the Snipe-IT API.
 package snipeit
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
+
+// SnipeTime represents a time field from the Snipe-IT API.
+// Snipe-IT returns times as objects with "datetime" and "formatted" fields.
+type SnipeTime struct {
+	time.Time
+}
+
+// UnmarshalJSON implements json.Unmarshaler for SnipeTime.
+func (st *SnipeTime) UnmarshalJSON(data []byte) error {
+	// Handle null values
+	if string(data) == "null" {
+		st.Time = time.Time{}
+		return nil
+	}
+
+	// First try to unmarshal as a simple string (in case API changes or testing)
+	var str string
+	if err := json.Unmarshal(data, &str); err == nil {
+		// Try multiple time formats
+		formats := []string{
+			"2006-01-02 15:04:05",                 // Snipe-IT format
+			time.RFC3339,                           // ISO 8601 with timezone
+			"2006-01-02T15:04:05.000000Z",        // ISO 8601 with microseconds
+			"2006-01-02T15:04:05Z",               // ISO 8601 basic
+		}
+		
+		var parseErr error
+		for _, format := range formats {
+			t, err := time.Parse(format, str)
+			if err == nil {
+				st.Time = t
+				return nil
+			}
+			parseErr = err
+		}
+		return parseErr
+	}
+
+	// Otherwise, expect the object format
+	var timeObj struct {
+		Datetime string `json:"datetime"`
+		Formatted string `json:"formatted"`
+	}
+	if err := json.Unmarshal(data, &timeObj); err != nil {
+		return err
+	}
+
+	if timeObj.Datetime != "" {
+		t, err := time.Parse("2006-01-02 15:04:05", timeObj.Datetime)
+		if err != nil {
+			return err
+		}
+		st.Time = t
+	}
+
+	return nil
+}
+
+// MarshalJSON implements json.Marshaler for SnipeTime.
+func (st SnipeTime) MarshalJSON() ([]byte, error) {
+	if st.Time.IsZero() {
+		return []byte("null"), nil
+	}
+	return json.Marshal(st.Time.Format("2006-01-02 15:04:05"))
+}
 
 // Response represents a standard response structure from the Snipe-IT API.
 // Different API endpoints may use different fields within this structure.
@@ -43,13 +111,13 @@ type CommonFields struct {
 	ID          int       `json:"id"`
 	
 	// CreatedAt is when the resource was created
-	CreatedAt   time.Time `json:"created_at"`
+	CreatedAt   *SnipeTime `json:"created_at"`
 	
 	// UpdatedAt is when the resource was last updated
-	UpdatedAt   time.Time `json:"updated_at"`
+	UpdatedAt   *SnipeTime `json:"updated_at"`
 	
 	// DeletedAt is when the resource was soft-deleted (if applicable)
-	DeletedAt   time.Time `json:"deleted_at,omitempty"`
+	DeletedAt   *SnipeTime `json:"deleted_at,omitempty"`
 	
 	// Name of the resource
 	Name        string    `json:"name"`
@@ -126,7 +194,7 @@ type Asset struct {
 	Location       Location    `json:"location,omitempty"`
 	
 	// PurchaseDate when the asset was purchased
-	PurchaseDate   *time.Time  `json:"purchase_date,omitempty"`
+	PurchaseDate   *SnipeTime  `json:"purchase_date,omitempty"`
 	
 	// PurchaseCost of the asset
 	PurchaseCost   string      `json:"purchase_cost,omitempty"`

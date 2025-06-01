@@ -16,12 +16,10 @@ type AssetsService struct {
 }
 
 // AssetResponse represents the API response for a single asset.
-// It embeds the standard Response struct and adds a Payload field
-// that contains the Asset data.
+// The single asset endpoint returns the asset data directly,
+// not wrapped in a payload field.
 type AssetResponse struct {
-	Response
-	// Payload contains the actual Asset data
-	Payload Asset `json:"payload"`
+	Asset
 }
 
 // AssetsResponse represents the API response for multiple assets.
@@ -297,33 +295,37 @@ func (s *AssetsService) CheckinContext(ctx context.Context, id int, checkin map[
 	return &response, resp, nil
 }
 
-// GetAssetBySerial fetches a single asset by its serial number.
+// GetAssetBySerial fetches assets by serial number.
 //
 // serial is the manufacturer's serial number of the asset to retrieve.
+// Note: This endpoint returns a list response, not a single asset,
+// because serial numbers might not be unique in Snipe-IT.
 //
 // Snipe-IT API docs: https://snipe-it.readme.io/reference/hardware-by-serial
-func (s *AssetsService) GetAssetBySerial(serial string) (*AssetResponse, *http.Response, error) {
+func (s *AssetsService) GetAssetBySerial(serial string) (*AssetsResponse, *http.Response, error) {
 	return s.GetAssetBySerialContext(context.Background(), serial)
 }
 
-// GetAssetBySerialContext fetches a single asset by its serial number with the provided context.
+// GetAssetBySerialContext fetches assets by serial number with the provided context.
 //
 // ctx is the context for the request.
 // serial is the manufacturer's serial number of the asset to retrieve.
+// Note: This endpoint returns a list response, not a single asset,
+// because serial numbers might not be unique in Snipe-IT.
 //
 // Snipe-IT API docs: https://snipe-it.readme.io/reference/hardware-by-serial
-func (s *AssetsService) GetAssetBySerialContext(ctx context.Context, serial string) (*AssetResponse, *http.Response, error) {
+func (s *AssetsService) GetAssetBySerialContext(ctx context.Context, serial string) (*AssetsResponse, *http.Response, error) {
 	u := fmt.Sprintf("api/v1/hardware/byserial/%s", serial)
 	req, err := s.client.newRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var asset AssetResponse
-	resp, err := s.client.Do(req, &asset)
+	var assets AssetsResponse
+	resp, err := s.client.Do(req, &assets)
 	if err != nil {
 		return nil, resp, err
 	}
 
-	return &asset, resp, nil
+	return &assets, resp, nil
 }

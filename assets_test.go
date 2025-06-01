@@ -137,8 +137,8 @@ func TestAssetsList(t *testing.T) {
 		CommonFields: CommonFields{
 			ID:        1,
 			Name:      "Asset 1",
-			CreatedAt: createdAt,
-			UpdatedAt: updatedAt,
+			CreatedAt: &SnipeTime{createdAt},
+			UpdatedAt: &SnipeTime{updatedAt},
 			Available: true,
 			Deleted:   false,
 		},
@@ -232,8 +232,8 @@ func TestAssetsGet(t *testing.T) {
 		CommonFields: CommonFields{
 			ID:        1,
 			Name:      "Asset 1",
-			CreatedAt: createdAt,
-			UpdatedAt: updatedAt,
+			CreatedAt: &SnipeTime{createdAt},
+			UpdatedAt: &SnipeTime{updatedAt},
 			Available: true,
 			Deleted:   false,
 		},
@@ -267,8 +267,8 @@ func TestAssetsGet(t *testing.T) {
 		},
 	}
 
-	if !reflect.DeepEqual(asset.Payload, expectedAsset) {
-		t.Errorf("Assets.Get returned = %+v, expected %+v", asset.Payload, expectedAsset)
+	if !reflect.DeepEqual(asset.Asset, expectedAsset) {
+		t.Errorf("Assets.Get returned = %+v, expected %+v", asset.Asset, expectedAsset)
 	}
 }
 
@@ -553,14 +553,14 @@ func TestAssetsCheckin(t *testing.T) {
 		t.Errorf("Assets.Checkin returned Status = %s, expected %s", asset.Status, "success")
 	}
 
-	if asset.Payload.User != nil {
+	if asset.User != nil {
 		t.Errorf("Assets.Checkin assigned_to = %v, expected %v", 
-			asset.Payload.User, nil)
+			asset.User, nil)
 	}
 
-	if asset.Payload.Available != true {
+	if asset.Available != true {
 		t.Errorf("Assets.Checkin available = %v, expected %v", 
-			asset.Payload.Available, true)
+			asset.Available, true)
 	}
 }
 
@@ -573,8 +573,8 @@ func TestAssetsGetAssetBySerial(t *testing.T) {
 		testHeader(t, r, "Accept", "application/json")
 		testHeader(t, r, "Authorization", "Bearer test-token")
 		fmt.Fprint(w, `{
-			"status": "success",
-			"payload": {
+			"total": 1,
+			"rows": [{
 				"id": 1,
 				"name": "Asset 1",
 				"asset_tag": "AT-1",
@@ -601,7 +601,7 @@ func TestAssetsGetAssetBySerial(t *testing.T) {
 				"updated_at": "2023-01-01T12:00:00.000000Z",
 				"available": true,
 				"deleted": false
-			}
+			}]
 		}`)
 	})
 
@@ -621,8 +621,8 @@ func TestAssetsGetAssetBySerial(t *testing.T) {
 		CommonFields: CommonFields{
 			ID:        1,
 			Name:      "Asset 1",
-			CreatedAt: createdAt,
-			UpdatedAt: updatedAt,
+			CreatedAt: &SnipeTime{createdAt},
+			UpdatedAt: &SnipeTime{updatedAt},
 			Available: true,
 			Deleted:   false,
 		},
@@ -656,8 +656,8 @@ func TestAssetsGetAssetBySerial(t *testing.T) {
 		},
 	}
 
-	if !reflect.DeepEqual(asset.Payload, expectedAsset) {
-		t.Errorf("Assets.GetAssetBySerial returned = %+v, expected %+v", asset.Payload, expectedAsset)
+	if !reflect.DeepEqual(asset, expectedAsset) {
+		t.Errorf("Assets.GetAssetBySerial returned = %+v, expected %+v", asset, expectedAsset)
 	}
 }
 

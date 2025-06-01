@@ -97,15 +97,15 @@ func main() {
 		}
 		
 		fmt.Printf("Asset details:\n")
-		fmt.Printf("  Name: %s\n", asset.Payload.Name)
-		fmt.Printf("  Tag: %s\n", asset.Payload.AssetTag)
-		fmt.Printf("  Serial: %s\n", asset.Payload.Serial)
-		fmt.Printf("  Model: %s\n", asset.Payload.Model.Name)
-		fmt.Printf("  Category: %s\n", asset.Payload.Category.Name)
-		fmt.Printf("  Status: %s\n", asset.Payload.StatusLabel.Name)
+		fmt.Printf("  Name: %s\n", asset.Name)
+		fmt.Printf("  Tag: %s\n", asset.AssetTag)
+		fmt.Printf("  Serial: %s\n", asset.Serial)
+		fmt.Printf("  Model: %s\n", asset.Model.Name)
+		fmt.Printf("  Category: %s\n", asset.Category.Name)
+		fmt.Printf("  Status: %s\n", asset.StatusLabel.Name)
 		
-		if asset.Payload.User != nil {
-			fmt.Printf("  Assigned to: %s\n", asset.Payload.User.Name)
+		if asset.User != nil {
+			fmt.Printf("  Assigned to: %s\n", asset.User.Name)
 		} else {
 			fmt.Printf("  Assigned to: Not assigned\n")
 		}
@@ -113,9 +113,9 @@ func main() {
 	
 	// Demonstrate searching for an asset by serial number
 	fmt.Printf("\nSearching for asset by serial number...\n")
-	// Note: Replace "EXAMPLE-SERIAL" with an actual serial number from your Snipe-IT instance
-	serialToSearch := "EXAMPLE-SERIAL"
-	assetBySerial, resp, err := client.Assets.GetAssetBySerial(serialToSearch)
+	// Note: Replace "DWDFN73" with an actual serial number from your Snipe-IT instance
+	serialToSearch := "DWDFN73"
+	assetsBySerial, resp, err := client.Assets.GetAssetBySerial(serialToSearch)
 	if err != nil {
 		// Check if it's a 404 not found error
 		if resp != nil && resp.StatusCode == 404 {
@@ -123,12 +123,16 @@ func main() {
 		} else {
 			fmt.Printf("Error searching for asset by serial: %v\n", err)
 		}
+	} else if assetsBySerial.Total == 0 {
+		fmt.Printf("No assets found with serial number %s\n", serialToSearch)
 	} else {
-		fmt.Printf("Found asset by serial number:\n")
-		fmt.Printf("  Name: %s\n", assetBySerial.Payload.Name)
-		fmt.Printf("  Tag: %s\n", assetBySerial.Payload.AssetTag)
-		fmt.Printf("  Serial: %s\n", assetBySerial.Payload.Serial)
-		fmt.Printf("  Model: %s\n", assetBySerial.Payload.Model.Name)
+		fmt.Printf("Found %d asset(s) with serial number %s:\n", assetsBySerial.Total, serialToSearch)
+		for _, asset := range assetsBySerial.Rows {
+			fmt.Printf("  Name: %s\n", asset.Name)
+			fmt.Printf("  Tag: %s\n", asset.AssetTag)
+			fmt.Printf("  Serial: %s\n", asset.Serial)
+			fmt.Printf("  Model: %s\n", asset.Model.Name)
+		}
 	}
 	
 	// Demonstrate how to make concurrent API requests with rate limiting
