@@ -183,36 +183,34 @@ func TestAssetsGet(t *testing.T) {
 
 	mux.HandleFunc("/api/v1/hardware/1", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, http.MethodGet)
+		// GET returns the asset directly, not wrapped in status/payload
 		fmt.Fprint(w, `{
-			"status": "success",
-			"payload": {
+			"id": 1,
+			"name": "Asset 1",
+			"asset_tag": "AT-1",
+			"serial": "SN-1",
+			"model": {
 				"id": 1,
-				"name": "Asset 1",
-				"asset_tag": "AT-1",
-				"serial": "SN-1",
-				"model": {
-					"id": 1,
-					"name": "Model 1"
-				},
-				"status_label": {
-					"id": 1,
-					"name": "Ready to Deploy",
-					"status_type": "deployable",
-					"status_meta": "deployable"
-				},
-				"category": {
-					"id": 1,
-					"name": "Laptop"
-				},
-				"manufacturer": {
-					"id": 1,
-					"name": "Manufacturer 1"
-				},
-				"created_at": "2023-01-01T12:00:00.000000Z",
-				"updated_at": "2023-01-01T12:00:00.000000Z",
-				"available": true,
-				"deleted": false
-			}
+				"name": "Model 1"
+			},
+			"status_label": {
+				"id": 1,
+				"name": "Ready to Deploy",
+				"status_type": "deployable",
+				"status_meta": "deployable"
+			},
+			"category": {
+				"id": 1,
+				"name": "Laptop"
+			},
+			"manufacturer": {
+				"id": 1,
+				"name": "Manufacturer 1"
+			},
+			"created_at": "2023-01-01T12:00:00.000000Z",
+			"updated_at": "2023-01-01T12:00:00.000000Z",
+			"available": true,
+			"deleted": false
 		}`)
 	})
 
@@ -221,13 +219,13 @@ func TestAssetsGet(t *testing.T) {
 		t.Fatalf("Assets.Get returned error: %v", err)
 	}
 
-	if asset.Status != "success" {
-		t.Errorf("Assets.Get returned Status = %s, expected %s", asset.Status, "success")
+	if asset.ID != 1 {
+		t.Errorf("Assets.Get returned ID = %d, expected %d", asset.ID, 1)
 	}
 
 	createdAt, _ := time.Parse(time.RFC3339, "2023-01-01T12:00:00.000000Z")
 	updatedAt, _ := time.Parse(time.RFC3339, "2023-01-01T12:00:00.000000Z")
-	
+
 	expectedAsset := Asset{
 		CommonFields: CommonFields{
 			ID:        1,
@@ -489,22 +487,22 @@ func TestAssetsCheckout(t *testing.T) {
 		t.Fatalf("Assets.Checkout returned error: %v", err)
 	}
 
-	if asset.Status != "success" {
+	if string(asset.Status) != "success" {
 		t.Errorf("Assets.Checkout returned Status = %s, expected %s", asset.Status, "success")
 	}
 
-	if asset.Payload.User == nil || asset.Payload.User.ID != 2 {
-		t.Errorf("Assets.Checkout assigned_to user ID = %v, expected %v", 
+	if asset.Payload.User == nil || asset.Payload.User.User.ID != 2 {
+		t.Errorf("Assets.Checkout assigned_to user ID = %v, expected %v",
 			asset.Payload.User, 2)
 	}
 
 	if asset.Payload.AssignedType != "user" {
-		t.Errorf("Assets.Checkout assigned_type = %s, expected %s", 
+		t.Errorf("Assets.Checkout assigned_type = %s, expected %s",
 			asset.Payload.AssignedType, "user")
 	}
 
 	if asset.Payload.Available != false {
-		t.Errorf("Assets.Checkout available = %v, expected %v", 
+		t.Errorf("Assets.Checkout available = %v, expected %v",
 			asset.Payload.Available, false)
 	}
 }
@@ -549,18 +547,18 @@ func TestAssetsCheckin(t *testing.T) {
 		t.Fatalf("Assets.Checkin returned error: %v", err)
 	}
 
-	if asset.Status != "success" {
+	if string(asset.Status) != "success" {
 		t.Errorf("Assets.Checkin returned Status = %s, expected %s", asset.Status, "success")
 	}
 
-	if asset.User != nil {
-		t.Errorf("Assets.Checkin assigned_to = %v, expected %v", 
-			asset.User, nil)
+	if asset.Payload.User != nil {
+		t.Errorf("Assets.Checkin assigned_to = %v, expected %v",
+			asset.Payload.User, nil)
 	}
 
-	if asset.Available != true {
-		t.Errorf("Assets.Checkin available = %v, expected %v", 
-			asset.Available, true)
+	if asset.Payload.Available != true {
+		t.Errorf("Assets.Checkin available = %v, expected %v",
+			asset.Payload.Available, true)
 	}
 }
 
@@ -610,13 +608,17 @@ func TestAssetsGetAssetBySerial(t *testing.T) {
 		t.Fatalf("Assets.GetAssetBySerial returned error: %v", err)
 	}
 
-	if asset.Status != "success" {
-		t.Errorf("Assets.GetAssetBySerial returned Status = %s, expected %s", asset.Status, "success")
+	if asset.Total != 1 {
+		t.Errorf("Assets.GetAssetBySerial returned Total = %d, expected %d", asset.Total, 1)
+	}
+
+	if len(asset.Rows) != 1 {
+		t.Fatalf("Assets.GetAssetBySerial returned %d rows, expected 1", len(asset.Rows))
 	}
 
 	createdAt, _ := time.Parse(time.RFC3339, "2023-01-01T12:00:00.000000Z")
 	updatedAt, _ := time.Parse(time.RFC3339, "2023-01-01T12:00:00.000000Z")
-	
+
 	expectedAsset := Asset{
 		CommonFields: CommonFields{
 			ID:        1,
@@ -656,8 +658,8 @@ func TestAssetsGetAssetBySerial(t *testing.T) {
 		},
 	}
 
-	if !reflect.DeepEqual(asset, expectedAsset) {
-		t.Errorf("Assets.GetAssetBySerial returned = %+v, expected %+v", asset, expectedAsset)
+	if !reflect.DeepEqual(asset.Rows[0], expectedAsset) {
+		t.Errorf("Assets.GetAssetBySerial returned = %+v, expected %+v", asset.Rows[0], expectedAsset)
 	}
 }
 

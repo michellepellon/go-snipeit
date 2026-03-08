@@ -132,6 +132,20 @@ const (
 	defaultJitter               = 0.2
 )
 
+// Logger is an interface for logging HTTP request and response details.
+// Implement this interface and set it on ClientOptions to enable debug logging.
+type Logger interface {
+	// LogRequest is called before each HTTP request is sent.
+	// method is the HTTP method, url is the full request URL, and body is the
+	// request body (nil for requests with no body).
+	LogRequest(method, url string, body []byte)
+
+	// LogResponse is called after each HTTP response is received.
+	// method is the HTTP method, url is the full request URL, statusCode is
+	// the HTTP status code, and body is the response body.
+	LogResponse(method, url string, statusCode int, body []byte)
+}
+
 // ClientOptions contains options for configuring the Snipe-IT client.
 type ClientOptions struct {
 	// HTTPClient is the HTTP client to use for making requests.
@@ -148,6 +162,10 @@ type ClientOptions struct {
 
 	// DisableRetries, if true, disables automatic retries for failed requests.
 	DisableRetries bool
+
+	// Logger enables debug logging of HTTP requests and responses.
+	// If nil, no logging is performed.
+	Logger Logger
 }
 
 // RequestOptions contains options for individual API requests.

@@ -61,6 +61,33 @@ type Client struct {
     // Assets is the service for interacting with the assets endpoint
     Assets *AssetsService
 
+    // Locations is the service for interacting with the locations endpoint
+    Locations *LocationsService
+
+    // StatusLabels is the service for interacting with the status labels endpoint
+    StatusLabels *StatusLabelsService
+
+    // Fields is the service for interacting with the custom fields endpoint
+    Fields *FieldsService
+
+    // Fieldsets is the service for interacting with the custom fieldsets endpoint
+    Fieldsets *FieldsetsService
+
+    // Models is the service for interacting with the models endpoint
+    Models *ModelsService
+
+    // Users is the service for interacting with the users endpoint
+    Users *UsersService
+
+    // Suppliers is the service for interacting with the suppliers endpoint
+    Suppliers *SuppliersService
+
+    // Categories is the service for interacting with the categories endpoint
+    Categories *CategoriesService
+
+    // Manufacturers is the service for interacting with the manufacturers endpoint
+    Manufacturers *ManufacturersService
+
     // Rate limiter for controlling request frequency
     rateLimiter RateLimiter
     
@@ -69,6 +96,9 @@ type Client struct {
     
     // DisableRetries, if true, disables automatic retries for failed requests
     disableRetries bool
+
+    // Logger for debug logging of requests and responses
+    logger Logger
 }
 
 // NewClient returns a new Snipe-IT API client.
@@ -162,9 +192,21 @@ func NewClientWithOptions(baseURL, token string, options *ClientOptions) (*Clien
         c.retryPolicy = options.RetryPolicy
     }
     
+    // Configure logger
+    c.logger = options.Logger
+
     // Initialize services
     c.Assets = &AssetsService{client: c}
-    
+    c.Locations = &LocationsService{client: c}
+    c.StatusLabels = &StatusLabelsService{client: c}
+    c.Fields = &FieldsService{client: c}
+    c.Fieldsets = &FieldsetsService{client: c}
+    c.Models = &ModelsService{client: c}
+    c.Users = &UsersService{client: c}
+    c.Suppliers = &SuppliersService{client: c}
+    c.Categories = &CategoriesService{client: c}
+    c.Manufacturers = &ManufacturersService{client: c}
+
     return c, nil
 }
 
@@ -283,6 +325,16 @@ func (c *Client) DoWithOptions(req *http.Request, v interface{}, opts *RequestOp
 
 // doOnce performs a single API request without any retry logic.
 func (c *Client) doOnce(ctx context.Context, req *http.Request, v interface{}) (*http.Response, error) {
+    // Log request if logger is configured
+    if c.logger != nil {
+        var reqBody []byte
+        if req.Body != nil {
+            reqBody, _ = io.ReadAll(req.Body)
+            req.Body = io.NopCloser(bytes.NewReader(reqBody))
+        }
+        c.logger.LogRequest(req.Method, req.URL.String(), reqBody)
+    }
+
     resp, err := c.client.Do(req)
     if err != nil {
         // If the error is due to context cancellation or deadline exceeded,
@@ -296,25 +348,32 @@ func (c *Client) doOnce(ctx context.Context, req *http.Request, v interface{}) (
     }
     defer resp.Body.Close()
 
+    // Read the full response body so we can log it and still decode
+    respBody, readErr := io.ReadAll(resp.Body)
+    if readErr != nil {
+        return resp, readErr
+    }
+
+    // Log response if logger is configured
+    if c.logger != nil {
+        c.logger.LogResponse(req.Method, req.URL.String(), resp.StatusCode, respBody)
+    }
+
     // If StatusCode is not in the 200 range, something went wrong
-    if c := resp.StatusCode; 200 > c || c > 299 {
+    if sc := resp.StatusCode; 200 > sc || sc > 299 {
         errorResponse := &ErrorResponse{Response: resp}
-        data, err := io.ReadAll(resp.Body)
-        if err == nil && data != nil {
-            json.Unmarshal(data, errorResponse)
+        if len(respBody) > 0 {
+            json.Unmarshal(respBody, errorResponse)
         }
         return resp, errorResponse
     }
 
     if v != nil {
         if w, ok := v.(io.Writer); ok {
-            _, err = io.Copy(w, resp.Body)
+            _, err = w.Write(respBody)
         } else {
-            decErr := json.NewDecoder(resp.Body).Decode(v)
-            if decErr == io.EOF {
-                decErr = nil // Ignore EOF errors caused by an empty response body
-            }
-            if decErr != nil {
+            decErr := json.Unmarshal(respBody, v)
+            if decErr != nil && len(respBody) > 0 {
                 err = decErr
             }
         }
@@ -372,6 +431,12 @@ func (c *Client) shouldRetry(resp *http.Response, err error, policy *RetryPolicy
 // The resulting request will include the proper authentication headers.
 func (c *Client) newRequest(method, urlStr string, body interface{}) (*http.Request, error) {
     return c.newRequestWithContext(context.Background(), method, urlStr, body)
+}
+
+// NewRequest creates an API request. This is an exported wrapper around newRequest
+// for use by callers that need to make direct API calls beyond the built-in services.
+func (c *Client) NewRequest(method, urlStr string, body interface{}) (*http.Request, error) {
+    return c.newRequest(method, urlStr, body)
 }
 
 // newRequestWithContext creates an API request with the provided context.
