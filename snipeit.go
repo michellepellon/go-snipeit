@@ -82,6 +82,12 @@ type Client struct {
     // Suppliers is the service for interacting with the suppliers endpoint
     Suppliers *SuppliersService
 
+    // Categories is the service for interacting with the categories endpoint
+    Categories *CategoriesService
+
+    // Manufacturers is the service for interacting with the manufacturers endpoint
+    Manufacturers *ManufacturersService
+
     // Rate limiter for controlling request frequency
     rateLimiter RateLimiter
     
@@ -198,7 +204,9 @@ func NewClientWithOptions(baseURL, token string, options *ClientOptions) (*Clien
     c.Models = &ModelsService{client: c}
     c.Users = &UsersService{client: c}
     c.Suppliers = &SuppliersService{client: c}
-    
+    c.Categories = &CategoriesService{client: c}
+    c.Manufacturers = &ManufacturersService{client: c}
+
     return c, nil
 }
 
