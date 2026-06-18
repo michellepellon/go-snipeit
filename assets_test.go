@@ -725,3 +725,40 @@ func TestAssetsGetAssetBySerialContext(t *testing.T) {
 		t.Errorf("Expected context.DeadlineExceeded error, got %v", err)
 	}
 }
+func TestAssetsCreateWithCheckout(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	var requestBody map[string]interface{}
+	mux.HandleFunc("/api/v1/hardware", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, http.MethodPost)
+		json.NewDecoder(r.Body).Decode(&requestBody)
+		fmt.Fprint(w, `{"status":"success","payload":{"id":3,"asset_tag":"CO-1","serial":"SN-CO"}}`)
+	})
+
+	newAsset := Asset{
+		AssetTag:       "CO-1",
+		Serial:         "SN-CO",
+		AssignedUser:   7,
+		CheckoutToType: "user",
+		Model:          Model{CommonFields: CommonFields{ID: 1}},
+		StatusLabel:    StatusLabel{CommonFields: CommonFields{ID: 1}},
+	}
+	if _, _, err := client.Assets.Create(newAsset); err != nil {
+		t.Fatalf("Assets.Create returned error: %v", err)
+	}
+	if requestBody["assigned_user"] != float64(7) {
+		t.Errorf("Request body assigned_user = %v, expected %v", requestBody["assigned_user"], float64(7))
+	}
+	if requestBody["checkout_to_type"] != "user" {
+		t.Errorf("Request body checkout_to_type = %v, expected %v", requestBody["checkout_to_type"], "user")
+	}
+	// A bare create (no checkout fields) must omit them.
+	requestBody = nil
+	if _, _, err := client.Assets.Create(Asset{AssetTag: "NO-CO", Serial: "SN2"}); err != nil {
+		t.Fatalf("Assets.Create (no checkout) returned error: %v", err)
+	}
+	if _, present := requestBody["assigned_user"]; present {
+		t.Errorf("assigned_user should be omitted when unset, got %v", requestBody["assigned_user"])
+	}
+}
