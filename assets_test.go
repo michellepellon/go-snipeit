@@ -96,7 +96,7 @@ func TestAssetsList(t *testing.T) {
 		Limit:  5,
 		Offset: 10,
 	}
-	
+
 	assets, _, err := client.Assets.List(opts)
 	if err != nil {
 		t.Fatalf("Assets.List returned error: %v", err)
@@ -105,11 +105,11 @@ func TestAssetsList(t *testing.T) {
 	if assets.Total != 2 {
 		t.Errorf("Assets.List returned Total = %d, expected %d", assets.Total, 2)
 	}
-	
+
 	if assets.Count != 2 {
 		t.Errorf("Assets.List returned Count = %d, expected %d", assets.Count, 2)
 	}
-	
+
 	if len(assets.Rows) != 2 {
 		t.Errorf("Assets.List returned %d assets, expected %d", len(assets.Rows), 2)
 	}
@@ -117,14 +117,14 @@ func TestAssetsList(t *testing.T) {
 	// Check the first asset
 	createdAt, _ := time.Parse(time.RFC3339, "2023-01-01T12:00:00.000000Z")
 	updatedAt, _ := time.Parse(time.RFC3339, "2023-01-01T12:00:00.000000Z")
-	
+
 	// Test context timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 	defer cancel()
-	
+
 	// Sleep to ensure the context times out
 	time.Sleep(20 * time.Millisecond)
-	
+
 	// Execute the request with a timed-out context
 	_, _, err = client.Assets.ListContext(ctx, opts)
 	if err == nil {
@@ -132,7 +132,7 @@ func TestAssetsList(t *testing.T) {
 	} else if err != context.DeadlineExceeded {
 		t.Errorf("Expected context.DeadlineExceeded error, got %v", err)
 	}
-	
+
 	expectedAsset1 := Asset{
 		CommonFields: CommonFields{
 			ID:        1,
@@ -277,11 +277,11 @@ func TestAssetsCreate(t *testing.T) {
 	mux.HandleFunc("/api/v1/hardware", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, http.MethodPost)
 		testHeader(t, r, "Content-Type", "application/json")
-		
+
 		// Verify the asset was serialized correctly
 		var requestBody map[string]interface{}
 		json.NewDecoder(r.Body).Decode(&requestBody)
-		
+
 		if requestBody["asset_tag"] != "NEW-1" {
 			t.Errorf("Request body asset_tag = %v, expected %v", requestBody["asset_tag"], "NEW-1")
 		}
@@ -351,17 +351,55 @@ func TestAssetsCreate(t *testing.T) {
 	}
 }
 
+func TestAssetsCreateWithCheckout(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	var requestBody map[string]interface{}
+	mux.HandleFunc("/api/v1/hardware", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, http.MethodPost)
+		json.NewDecoder(r.Body).Decode(&requestBody)
+		fmt.Fprint(w, `{"status":"success","payload":{"id":3,"asset_tag":"CO-1","serial":"SN-CO"}}`)
+	})
+
+	newAsset := Asset{
+		AssetTag:       "CO-1",
+		Serial:         "SN-CO",
+		AssignedUser:   7,
+		CheckoutToType: "user",
+		Model:          Model{CommonFields: CommonFields{ID: 1}},
+		StatusLabel:    StatusLabel{CommonFields: CommonFields{ID: 1}},
+	}
+	if _, _, err := client.Assets.Create(newAsset); err != nil {
+		t.Fatalf("Assets.Create returned error: %v", err)
+	}
+	if requestBody["assigned_user"] != float64(7) {
+		t.Errorf("Request body assigned_user = %v, expected %v", requestBody["assigned_user"], float64(7))
+	}
+	if requestBody["checkout_to_type"] != "user" {
+		t.Errorf("Request body checkout_to_type = %v, expected %v", requestBody["checkout_to_type"], "user")
+	}
+	// A bare create (no checkout fields) must omit them.
+	requestBody = nil
+	if _, _, err := client.Assets.Create(Asset{AssetTag: "NO-CO", Serial: "SN2"}); err != nil {
+		t.Fatalf("Assets.Create (no checkout) returned error: %v", err)
+	}
+	if _, present := requestBody["assigned_user"]; present {
+		t.Errorf("assigned_user should be omitted when unset, got %v", requestBody["assigned_user"])
+	}
+}
+
 func TestAssetsUpdate(t *testing.T) {
 	client, mux, _, teardown := setup()
 	defer teardown()
 
 	mux.HandleFunc("/api/v1/hardware/1", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, http.MethodPut)
-		
+
 		// Verify the asset was serialized correctly
 		var requestBody map[string]interface{}
 		json.NewDecoder(r.Body).Decode(&requestBody)
-		
+
 		if requestBody["name"] != "Updated Asset" {
 			t.Errorf("Request body name = %v, expected %v", requestBody["name"], "Updated Asset")
 		}
@@ -448,11 +486,11 @@ func TestAssetsCheckout(t *testing.T) {
 
 	mux.HandleFunc("/api/v1/hardware/1/checkout", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, http.MethodPost)
-		
+
 		// Verify request body
 		var requestBody map[string]interface{}
 		json.NewDecoder(r.Body).Decode(&requestBody)
-		
+
 		if requestBody["assigned_user"] != float64(2) {
 			t.Errorf("Request body assigned_user = %v, expected %v", requestBody["assigned_user"], float64(2))
 		}
@@ -513,13 +551,13 @@ func TestAssetsCheckin(t *testing.T) {
 
 	mux.HandleFunc("/api/v1/hardware/1/checkin", func(w http.ResponseWriter, r *http.Request) {
 		testMethod(t, r, http.MethodPost)
-		
+
 		// Verify request body
 		var requestBody map[string]interface{}
 		json.NewDecoder(r.Body).Decode(&requestBody)
-		
+
 		if requestBody["note"] != "Checked in from John Doe" {
-			t.Errorf("Request body note = %v, expected %v", 
+			t.Errorf("Request body note = %v, expected %v",
 				requestBody["note"], "Checked in from John Doe")
 		}
 
