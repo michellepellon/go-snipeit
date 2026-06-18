@@ -133,12 +133,12 @@ func (st *SnipeTime) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &str); err == nil {
 		// Try multiple time formats
 		formats := []string{
-			"2006-01-02 15:04:05",                 // Snipe-IT format
-			time.RFC3339,                           // ISO 8601 with timezone
-			"2006-01-02T15:04:05.000000Z",        // ISO 8601 with microseconds
-			"2006-01-02T15:04:05Z",               // ISO 8601 basic
+			"2006-01-02 15:04:05",         // Snipe-IT format
+			time.RFC3339,                  // ISO 8601 with timezone
+			"2006-01-02T15:04:05.000000Z", // ISO 8601 with microseconds
+			"2006-01-02T15:04:05Z",        // ISO 8601 basic
 		}
-		
+
 		var parseErr error
 		for _, format := range formats {
 			t, err := time.Parse(format, str)
@@ -259,65 +259,65 @@ func (fm FlexMessage) String() string {
 // single-item endpoints typically use Payload.
 type Response struct {
 	// Status of the API request, typically "success" or "error"
-	Status   string      `json:"status"`
+	Status string `json:"status"`
 
 	// Message provided by the API, often used for error information.
 	// Uses FlexMessage because the API returns this as either a plain string
 	// or a JSON object with field-level validation errors.
-	Message  FlexMessage `json:"messages,omitempty"`
+	Message FlexMessage `json:"messages,omitempty"`
 
 	// Payload contains the primary data for single-item responses
-	Payload  interface{} `json:"payload,omitempty"`
+	Payload interface{} `json:"payload,omitempty"`
 
 	// Total number of items available (for paginated responses)
-	Total    int         `json:"total,omitempty"`
+	Total int `json:"total,omitempty"`
 
 	// Count of items in the current response
-	Count    int         `json:"count,omitempty"`
+	Count int `json:"count,omitempty"`
 
 	// Rows contains the data for list/collection responses
-	Rows     interface{} `json:"rows,omitempty"`
+	Rows interface{} `json:"rows,omitempty"`
 
 	// Offset from the beginning of the collection (for pagination)
-	Offset   int         `json:"offset,omitempty"`
+	Offset int `json:"offset,omitempty"`
 
 	// Limit on the number of items returned (for pagination)
-	Limit    int         `json:"limit,omitempty"`
+	Limit int `json:"limit,omitempty"`
 
 	// PageSize indicates the number of items per page (for pagination)
-	PageSize int         `json:"pagesize,omitempty"`
+	PageSize int `json:"pagesize,omitempty"`
 }
 
 // CommonFields contains fields that are common across many Snipe-IT resource types.
 // This is embedded in other model structs to avoid repetition.
 type CommonFields struct {
 	// ID is the unique identifier for the resource
-	ID          int       `json:"id"`
-	
+	ID int `json:"id"`
+
 	// CreatedAt is when the resource was created
-	CreatedAt   *SnipeTime `json:"created_at"`
-	
+	CreatedAt *SnipeTime `json:"created_at"`
+
 	// UpdatedAt is when the resource was last updated
-	UpdatedAt   *SnipeTime `json:"updated_at"`
-	
+	UpdatedAt *SnipeTime `json:"updated_at"`
+
 	// DeletedAt is when the resource was soft-deleted (if applicable)
-	DeletedAt   *SnipeTime `json:"deleted_at,omitempty"`
-	
+	DeletedAt *SnipeTime `json:"deleted_at,omitempty"`
+
 	// Name of the resource
-	Name        string    `json:"name"`
-	
+	Name string `json:"name"`
+
 	// Notes associated with the resource
-	Notes       string    `json:"notes,omitempty"`
-	
+	Notes string `json:"notes,omitempty"`
+
 	// Available indicates if the resource is available for checkout
-	Available   bool      `json:"available"`
-	
+	Available FlexBool `json:"available"`
+
 	// Deleted indicates if the resource has been soft-deleted
-	Deleted     bool      `json:"deleted"`
-	
+	Deleted FlexBool `json:"deleted"`
+
 	// Image is a URL to the image associated with the resource
-	Image       string    `json:"image,omitempty"`
-	
+	Image string `json:"image,omitempty"`
+
 	// CustomFields contains any custom fields defined for the resource.
 	// When reading from the API, Snipe-IT returns these as a nested object
 	// under "custom_fields". When writing, they must be sent as top-level
@@ -330,22 +330,22 @@ type CommonFields struct {
 // These options are used to control pagination, sorting, and filtering of list results.
 type ListOptions struct {
 	// Page number for paginated results (1-based)
-	Page     int `url:"page,omitempty"`
-	
+	Page int `url:"page,omitempty"`
+
 	// Limit sets the maximum number of items to return per page
-	Limit    int `url:"limit,omitempty"`
-	
+	Limit int `url:"limit,omitempty"`
+
 	// Offset is the number of items to skip before starting to collect results
-	Offset   int `url:"offset,omitempty"`
-	
+	Offset int `url:"offset,omitempty"`
+
 	// Sort specifies the field to sort results by (e.g., "id", "name")
-	Sort     string `url:"sort,omitempty"`
-	
+	Sort string `url:"sort,omitempty"`
+
 	// SortDir specifies the sort direction, either "asc" or "desc"
-	SortDir  string `url:"sort_dir,omitempty"`
-	
+	SortDir string `url:"sort_dir,omitempty"`
+
 	// Search is a search term to filter results
-	Search   string `url:"search,omitempty"`
+	Search string `url:"search,omitempty"`
 }
 
 // Asset represents a Snipe-IT hardware asset.
@@ -353,55 +353,65 @@ type ListOptions struct {
 type Asset struct {
 	// CommonFields contains standard fields like ID, Name, etc.
 	CommonFields
-	
+
 	// AssetTag is a unique identifier for the asset in your organization
-	AssetTag       string      `json:"asset_tag"`
-	
+	AssetTag string `json:"asset_tag"`
+
 	// Serial is the manufacturer's serial number
-	Serial         string      `json:"serial"`
-	
+	Serial string `json:"serial"`
+
 	// Model specifies what model the asset is
-	Model          Model       `json:"model"`
-	
+	Model Model `json:"model"`
+
 	// ModelNumber is the manufacturer's model number
-	ModelNumber    string      `json:"model_number,omitempty"`
-	
+	ModelNumber string `json:"model_number,omitempty"`
+
 	// StatusLabel indicates the current status (e.g., "Ready to Deploy", "Deployed")
-	StatusLabel    StatusLabel `json:"status_label"`
-	
+	StatusLabel StatusLabel `json:"status_label"`
+
 	// Category of the asset (e.g., "Laptop", "Monitor")
-	Category       Category    `json:"category"`
-	
+	Category Category `json:"category"`
+
 	// Manufacturer of the asset
-	Manufacturer   Manufacturer `json:"manufacturer"`
-	
+	Manufacturer Manufacturer `json:"manufacturer"`
+
 	// Supplier from whom the asset was purchased
-	Supplier       Supplier    `json:"supplier,omitempty"`
-	
+	Supplier Supplier `json:"supplier,omitempty"`
+
 	// Location where the asset is physically located
-	Location       Location    `json:"location,omitempty"`
-	
+	Location Location `json:"location,omitempty"`
+
 	// PurchaseDate when the asset was purchased
-	PurchaseDate   *SnipeTime  `json:"purchase_date,omitempty"`
-	
+	PurchaseDate *SnipeTime `json:"purchase_date,omitempty"`
+
 	// PurchaseCost of the asset
-	PurchaseCost   string      `json:"purchase_cost,omitempty"`
-	
+	PurchaseCost string `json:"purchase_cost,omitempty"`
+
 	// WarrantyMonths is the length of the warranty in months.
 	// Uses FlexInt because the Snipe-IT API may return this as a string.
-	WarrantyMonths FlexInt     `json:"warranty_months,omitempty"`
-	
+	WarrantyMonths FlexInt `json:"warranty_months,omitempty"`
+
 	// User to whom the asset is assigned (if any).
 	// Uses FlexUser because the API returns a full User object on GET but
 	// just a user ID number on create/update response payloads.
-	User           *FlexUser   `json:"assigned_to,omitempty"`
-	
+	User *FlexUser `json:"assigned_to,omitempty"`
+
+	// AssignedUser, paired with CheckoutToType, checks the asset out at CREATE
+	// (or update) time. Snipe-IT's write endpoints accept the flat "assigned_user"
+	// (a user ID) plus "checkout_to_type" — distinct from the "assigned_to" output
+	// object above, which the API ignores on writes. Leave zero for no checkout.
+	AssignedUser int `json:"assigned_user,omitempty"`
+
+	// CheckoutToType selects what AssignedUser refers to ("user", "location",
+	// "asset"). Pair with AssignedUser to check out at create/update time.
+	CheckoutToType string `json:"checkout_to_type,omitempty"`
+
 	// OrderNumber is the order number associated with the asset purchase
-	OrderNumber    string      `json:"order_number,omitempty"`
+	OrderNumber string `json:"order_number,omitempty"`
 
 	// AssignedType indicates what type of entity the asset is assigned to
 	// (e.g., "user", "location", "asset")
-	AssignedType   string      `json:"assigned_type,omitempty"`
+	AssignedType string `json:"assigned_type,omitempty"`
 }
 
 // UnmarshalJSON implements json.Unmarshaler for Asset.
@@ -481,6 +491,12 @@ func (a Asset) MarshalJSON() ([]byte, error) {
 	if a.AssignedType != "" {
 		m["assigned_type"] = a.AssignedType
 	}
+	if a.AssignedUser != 0 {
+		m["assigned_user"] = a.AssignedUser
+	}
+	if a.CheckoutToType != "" {
+		m["checkout_to_type"] = a.CheckoutToType
+	}
 	if a.Image != "" {
 		m["image"] = a.Image
 	}
@@ -521,30 +537,30 @@ func (a Asset) MarshalJSON() ([]byte, error) {
 type User struct {
 	// CommonFields contains standard fields like ID, Name, etc.
 	CommonFields
-	
+
 	// Username for logging into Snipe-IT
 	Username string `json:"username"`
-	
+
 	// Email address of the user
-	Email    string `json:"email"`
-	
+	Email string `json:"email"`
+
 	// FirstName of the user
 	FirstName string `json:"first_name,omitempty"`
-	
+
 	// LastName of the user
-	LastName  string `json:"last_name,omitempty"`
-	
+	LastName string `json:"last_name,omitempty"`
+
 	// Phone number of the user
-	Phone     string `json:"phone,omitempty"`
-	
+	Phone string `json:"phone,omitempty"`
+
 	// JobTitle of the user
-	JobTitle  string `json:"jobtitle,omitempty"`
-	
+	JobTitle string `json:"jobtitle,omitempty"`
+
 	// Employee ID or number
-	Employee  string `json:"employee_num,omitempty"`
-	
+	Employee string `json:"employee_num,omitempty"`
+
 	// Activated indicates if the user account is active
-	Activated bool   `json:"activated"`
+	Activated FlexBool `json:"activated"`
 }
 
 // Model represents a Snipe-IT model.
@@ -553,25 +569,25 @@ type User struct {
 type Model struct {
 	// CommonFields contains standard fields like ID, Name, etc.
 	CommonFields
-	
+
 	// ModelNumber is the manufacturer's model identifier
-	ModelNumber   string      `json:"model_number,omitempty"`
-	
+	ModelNumber string `json:"model_number,omitempty"`
+
 	// Category that this model belongs to
-	Category      Category    `json:"category"`
-	
+	Category Category `json:"category"`
+
 	// Manufacturer of this model
-	Manufacturer  Manufacturer `json:"manufacturer"`
-	
+	Manufacturer Manufacturer `json:"manufacturer"`
+
 	// FieldsetID is the ID of the custom fieldset associated with this model
-	FieldsetID    int         `json:"fieldset_id,omitempty"`
-	
+	FieldsetID int `json:"fieldset_id,omitempty"`
+
 	// EOL is the End of Life in months for this model.
 	// Uses FlexInt because the Snipe-IT API may return this as a string.
-	EOL           FlexInt     `json:"eol,omitempty"`
-	
+	EOL FlexInt `json:"eol,omitempty"`
+
 	// AssetsCount is the number of assets of this model
-	AssetsCount   int         `json:"assets_count,omitempty"`
+	AssetsCount int `json:"assets_count,omitempty"`
 }
 
 // MarshalJSON implements json.Marshaler for Model.
@@ -616,27 +632,27 @@ func (m Model) MarshalJSON() ([]byte, error) {
 type Category struct {
 	// CommonFields contains standard fields like ID, Name, etc.
 	CommonFields
-	
+
 	// Type of category (e.g., "asset", "accessory", "consumable", "component")
-	Type          string `json:"type"`
-	
+	Type string `json:"type"`
+
 	// EULA indicates if this category requires a EULA acceptance
-	EULA          bool   `json:"eula,omitempty"`
-	
+	EULA FlexBool `json:"eula,omitempty"`
+
 	// Checkin indicates if email should be sent on checkin
-	Checkin       bool   `json:"checkin_email,omitempty"`
-	
+	Checkin FlexBool `json:"checkin_email,omitempty"`
+
 	// Checkout indicates if email should be sent on checkout
-	Checkout      bool   `json:"checkout_email,omitempty"`
-	
+	Checkout FlexBool `json:"checkout_email,omitempty"`
+
 	// RequireMAAC indicates if manager acceptance is required
-	RequireMAAC   bool   `json:"require_acceptance,omitempty"`
-	
+	RequireMAAC FlexBool `json:"require_acceptance,omitempty"`
+
 	// AssetsCount is the number of assets in this category
-	AssetsCount   int    `json:"assets_count,omitempty"`
-	
+	AssetsCount int `json:"assets_count,omitempty"`
+
 	// ModelsCount is the number of models in this category
-	ModelsCount   int    `json:"models_count,omitempty"`
+	ModelsCount int `json:"models_count,omitempty"`
 }
 
 // Manufacturer represents a Snipe-IT manufacturer.
@@ -644,21 +660,21 @@ type Category struct {
 type Manufacturer struct {
 	// CommonFields contains standard fields like ID, Name, etc.
 	CommonFields
-	
+
 	// URL is the manufacturer's website
-	URL          string `json:"url,omitempty"`
-	
+	URL string `json:"url,omitempty"`
+
 	// SupportURL is the URL for getting support
-	SupportURL   string `json:"support_url,omitempty"`
-	
+	SupportURL string `json:"support_url,omitempty"`
+
 	// SupportPhone is the phone number for getting support
 	SupportPhone string `json:"support_phone,omitempty"`
-	
+
 	// SupportEmail is the email for getting support
 	SupportEmail string `json:"support_email,omitempty"`
-	
+
 	// AssetsCount is the number of assets from this manufacturer
-	AssetsCount  int    `json:"assets_count,omitempty"`
+	AssetsCount int `json:"assets_count,omitempty"`
 }
 
 // Location represents a Snipe-IT location.
@@ -666,39 +682,39 @@ type Manufacturer struct {
 type Location struct {
 	// CommonFields contains standard fields like ID, Name, etc.
 	CommonFields
-	
+
 	// Address line 1
-	Address    string     `json:"address,omitempty"`
-	
+	Address string `json:"address,omitempty"`
+
 	// Address line 2
-	Address2   string     `json:"address2,omitempty"`
-	
+	Address2 string `json:"address2,omitempty"`
+
 	// City name
-	City       string     `json:"city,omitempty"`
-	
+	City string `json:"city,omitempty"`
+
 	// State or province
-	State      string     `json:"state,omitempty"`
-	
+	State string `json:"state,omitempty"`
+
 	// Country name
-	Country    string     `json:"country,omitempty"`
-	
+	Country string `json:"country,omitempty"`
+
 	// Zip or postal code
-	Zip        string     `json:"zip,omitempty"`
-	
+	Zip string `json:"zip,omitempty"`
+
 	// Currency used at this location
-	Currency   string     `json:"currency,omitempty"`
-	
+	Currency string `json:"currency,omitempty"`
+
 	// ParentID is the ID of the parent location (for hierarchical locations)
-	ParentID   int        `json:"parent_id,omitempty"`
-	
+	ParentID int `json:"parent_id,omitempty"`
+
 	// Parent is the parent location object (for hierarchical locations)
-	Parent     *Location  `json:"parent,omitempty"`
-	
+	Parent *Location `json:"parent,omitempty"`
+
 	// Children are the child locations of this location
-	Children   []Location `json:"children,omitempty"`
-	
+	Children []Location `json:"children,omitempty"`
+
 	// AssetsCount is the number of assets at this location
-	AssetsCount int       `json:"assets_count,omitempty"`
+	AssetsCount int `json:"assets_count,omitempty"`
 }
 
 // StatusLabel represents a Snipe-IT status label.
@@ -706,13 +722,13 @@ type Location struct {
 type StatusLabel struct {
 	// CommonFields contains standard fields like ID, Name, etc.
 	CommonFields
-	
+
 	// Type of status (typically "deployable", "undeployable" or "archived")
-	Type       string `json:"type"`
-	
+	Type string `json:"type"`
+
 	// StatusMeta provides metadata about the status
 	StatusMeta string `json:"status_meta"`
-	
+
 	// StatusType indicates the deployment status (typically same as Type)
 	StatusType string `json:"status_type"`
 }
@@ -722,42 +738,42 @@ type StatusLabel struct {
 type Supplier struct {
 	// CommonFields contains standard fields like ID, Name, etc.
 	CommonFields
-	
+
 	// Address line 1
-	Address    string `json:"address,omitempty"`
-	
+	Address string `json:"address,omitempty"`
+
 	// Address line 2
-	Address2   string `json:"address2,omitempty"`
-	
+	Address2 string `json:"address2,omitempty"`
+
 	// City name
-	City       string `json:"city,omitempty"`
-	
+	City string `json:"city,omitempty"`
+
 	// State or province
-	State      string `json:"state,omitempty"`
-	
+	State string `json:"state,omitempty"`
+
 	// Country name
-	Country    string `json:"country,omitempty"`
-	
+	Country string `json:"country,omitempty"`
+
 	// Zip or postal code
-	Zip        string `json:"zip,omitempty"`
-	
+	Zip string `json:"zip,omitempty"`
+
 	// ContactName is the name of the primary contact at the supplier
 	ContactName string `json:"contact,omitempty"`
-	
+
 	// Phone number of the supplier
-	Phone      string `json:"phone,omitempty"`
-	
+	Phone string `json:"phone,omitempty"`
+
 	// Fax number of the supplier
-	Fax        string `json:"fax,omitempty"`
-	
+	Fax string `json:"fax,omitempty"`
+
 	// Email address for the supplier
-	Email      string `json:"email,omitempty"`
-	
+	Email string `json:"email,omitempty"`
+
 	// URL is the supplier's website
-	URL        string `json:"url,omitempty"`
-	
+	URL string `json:"url,omitempty"`
+
 	// AssetsCount is the number of assets from this supplier
-	AssetsCount int    `json:"assets_count,omitempty"`
+	AssetsCount int `json:"assets_count,omitempty"`
 }
 
 // Field represents a Snipe-IT custom field.
