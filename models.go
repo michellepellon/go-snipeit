@@ -310,10 +310,10 @@ type CommonFields struct {
 	Notes       string    `json:"notes,omitempty"`
 	
 	// Available indicates if the resource is available for checkout
-	Available   bool      `json:"available"`
+	Available   FlexBool  `json:"available"`
 	
 	// Deleted indicates if the resource has been soft-deleted
-	Deleted     bool      `json:"deleted"`
+	Deleted     FlexBool  `json:"deleted"`
 	
 	// Image is a URL to the image associated with the resource
 	Image       string    `json:"image,omitempty"`
@@ -544,7 +544,7 @@ type User struct {
 	Employee  string `json:"employee_num,omitempty"`
 	
 	// Activated indicates if the user account is active
-	Activated bool   `json:"activated"`
+	Activated FlexBool `json:"activated"`
 }
 
 // Model represents a Snipe-IT model.
@@ -618,16 +618,16 @@ type Category struct {
 	Type          string `json:"type"`
 	
 	// EULA indicates if this category requires a EULA acceptance
-	EULA          bool   `json:"eula,omitempty"`
+	EULA          FlexBool `json:"eula,omitempty"`
 	
 	// Checkin indicates if email should be sent on checkin
-	Checkin       bool   `json:"checkin_email,omitempty"`
+	Checkin       FlexBool `json:"checkin_email,omitempty"`
 	
 	// Checkout indicates if email should be sent on checkout
-	Checkout      bool   `json:"checkout_email,omitempty"`
+	Checkout      FlexBool `json:"checkout_email,omitempty"`
 	
 	// RequireMAAC indicates if manager acceptance is required
-	RequireMAAC   bool   `json:"require_acceptance,omitempty"`
+	RequireMAAC   FlexBool `json:"require_acceptance,omitempty"`
 	
 	// AssetsCount is the number of assets in this category
 	AssetsCount   int    `json:"assets_count,omitempty"`
