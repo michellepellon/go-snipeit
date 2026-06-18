@@ -396,6 +396,16 @@ type Asset struct {
 	// just a user ID number on create/update response payloads.
 	User           *FlexUser   `json:"assigned_to,omitempty"`
 	
+	// AssignedUser, paired with CheckoutToType, checks the asset out at CREATE
+	// (or update) time. Snipe-IT's write endpoints accept the flat "assigned_user"
+	// (a user ID) plus "checkout_to_type", distinct from the "assigned_to" output
+	// object above, which the API ignores on writes. Leave zero for no checkout.
+	AssignedUser   int         `json:"assigned_user,omitempty"`
+	
+	// CheckoutToType selects what AssignedUser refers to ("user", "location",
+	// "asset"). Pair with AssignedUser to check out at create/update time.
+	CheckoutToType string      `json:"checkout_to_type,omitempty"`
+	
 	// OrderNumber is the order number associated with the asset purchase
 	OrderNumber    string      `json:"order_number,omitempty"`
 
@@ -480,6 +490,12 @@ func (a Asset) MarshalJSON() ([]byte, error) {
 	}
 	if a.AssignedType != "" {
 		m["assigned_type"] = a.AssignedType
+	}
+	if a.AssignedUser != 0 {
+		m["assigned_user"] = a.AssignedUser
+	}
+	if a.CheckoutToType != "" {
+		m["checkout_to_type"] = a.CheckoutToType
 	}
 	if a.Image != "" {
 		m["image"] = a.Image
