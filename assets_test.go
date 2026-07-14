@@ -523,17 +523,16 @@ func TestAssetsCheckin(t *testing.T) {
 				requestBody["note"], "Checked in from John Doe")
 		}
 
+		// Snipe-IT's checkin endpoint does not return the full asset:
+		// "model" is the model's name as a plain string, not an object.
+		// See AssetsController::checkin in snipe/snipe-it.
 		fmt.Fprint(w, `{
 			"status": "success",
+			"messages": "Asset checked in successfully.",
 			"payload": {
-				"id": 1,
-				"name": "Asset 1",
 				"asset_tag": "AT-1",
-				"serial": "SN-1",
-				"assigned_to": null,
-				"assigned_type": null,
-				"available": true,
-				"deleted": false
+				"model": "MacBook Air 13\" M2",
+				"model_number": "A2681"
 			}
 		}`)
 	})
@@ -542,23 +541,59 @@ func TestAssetsCheckin(t *testing.T) {
 		"note": "Checked in from John Doe",
 	}
 
-	asset, _, err := client.Assets.Checkin(1, checkin)
+	resp, _, err := client.Assets.Checkin(1, checkin)
 	if err != nil {
 		t.Fatalf("Assets.Checkin returned error: %v", err)
 	}
 
-	if string(asset.Status) != "success" {
-		t.Errorf("Assets.Checkin returned Status = %s, expected %s", asset.Status, "success")
+	if string(resp.Status) != "success" {
+		t.Errorf("Assets.Checkin returned Status = %s, expected %s", resp.Status, "success")
 	}
 
-	if asset.Payload.User != nil {
-		t.Errorf("Assets.Checkin assigned_to = %v, expected %v",
-			asset.Payload.User, nil)
+	if resp.Payload.AssetTag != "AT-1" {
+		t.Errorf("Assets.Checkin returned AssetTag = %s, expected %s", resp.Payload.AssetTag, "AT-1")
 	}
 
-	if asset.Payload.Available != true {
-		t.Errorf("Assets.Checkin available = %v, expected %v",
-			asset.Payload.Available, true)
+	if resp.Payload.Model != `MacBook Air 13" M2` {
+		t.Errorf("Assets.Checkin returned Model = %s, expected %s", resp.Payload.Model, `MacBook Air 13" M2`)
+	}
+
+	if resp.Payload.ModelNumber != "A2681" {
+		t.Errorf("Assets.Checkin returned ModelNumber = %s, expected %s", resp.Payload.ModelNumber, "A2681")
+	}
+}
+
+func TestAssetsCheckinAlreadyCheckedIn(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	mux.HandleFunc("/api/v1/hardware/1/checkin", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, http.MethodPost)
+
+		// Snipe-IT returns HTTP 200 with status "error" when the asset
+		// is not currently checked out.
+		fmt.Fprint(w, `{
+			"status": "error",
+			"messages": "That asset is already checked in.",
+			"payload": {
+				"asset_tag": "AT-1",
+				"model": "MacBook Air 13\" M2",
+				"model_number": "A2681"
+			}
+		}`)
+	})
+
+	resp, _, err := client.Assets.Checkin(1, map[string]interface{}{})
+	if err != nil {
+		t.Fatalf("Assets.Checkin returned error: %v", err)
+	}
+
+	if string(resp.Status) != "error" {
+		t.Errorf("Assets.Checkin returned Status = %s, expected %s", resp.Status, "error")
+	}
+
+	if resp.Message.String() != "That asset is already checked in." {
+		t.Errorf("Assets.Checkin returned Message = %s, expected already-checked-in message", resp.Message)
 	}
 }
 

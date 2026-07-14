@@ -33,6 +33,29 @@ type AssetCreateResponse struct {
 	Payload Asset `json:"payload"`
 }
 
+// AssetCheckinResponse represents the API response for asset checkin.
+// Unlike create/update, the checkin endpoint does not return the full
+// asset: the payload only contains the asset tag plus the model's name
+// and model number, all as plain strings:
+//
+//	{"status":"success","messages":"...","payload":{"asset_tag":"...","model":"...","model_number":"..."}}
+type AssetCheckinResponse struct {
+	Response
+	Payload AssetCheckinPayload `json:"payload"`
+}
+
+// AssetCheckinPayload is the payload returned by the checkin endpoint.
+type AssetCheckinPayload struct {
+	// AssetTag is the checked-in asset's tag
+	AssetTag string `json:"asset_tag"`
+
+	// Model is the name of the asset's model (a string, not a Model object)
+	Model string `json:"model"`
+
+	// ModelNumber is the asset model's model number
+	ModelNumber string `json:"model_number"`
+}
+
 // AssetsResponse represents the API response for multiple assets.
 // It embeds the standard Response struct and adds a Rows field
 // that contains a slice of Assets.
@@ -310,7 +333,7 @@ func (s *AssetsService) CheckoutContext(ctx context.Context, id int, checkout ma
 // - checkin_at: Date of checkin (YYYY-MM-DD format)
 //
 // Snipe-IT API docs: https://snipe-it.readme.io/reference/hardware-checkin
-func (s *AssetsService) Checkin(id int, checkin map[string]interface{}) (*AssetCreateResponse, *http.Response, error) {
+func (s *AssetsService) Checkin(id int, checkin map[string]interface{}) (*AssetCheckinResponse, *http.Response, error) {
 	return s.CheckinContext(context.Background(), id, checkin)
 }
 
@@ -325,14 +348,14 @@ func (s *AssetsService) Checkin(id int, checkin map[string]interface{}) (*AssetC
 // - checkin_at: Date of checkin (YYYY-MM-DD format)
 //
 // Snipe-IT API docs: https://snipe-it.readme.io/reference/hardware-checkin
-func (s *AssetsService) CheckinContext(ctx context.Context, id int, checkin map[string]interface{}) (*AssetCreateResponse, *http.Response, error) {
+func (s *AssetsService) CheckinContext(ctx context.Context, id int, checkin map[string]interface{}) (*AssetCheckinResponse, *http.Response, error) {
 	u := fmt.Sprintf("api/v1/hardware/%d/checkin", id)
 	req, err := s.client.newRequestWithContext(ctx, http.MethodPost, u, checkin)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var response AssetCreateResponse
+	var response AssetCheckinResponse
 	resp, err := s.client.Do(req, &response)
 	if err != nil {
 		return nil, resp, err
