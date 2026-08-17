@@ -346,6 +346,15 @@ type ListOptions struct {
 
 	// Search is a search term to filter results
 	Search string `url:"search,omitempty"`
+
+	// CategoryID filters hardware list results by category
+	CategoryID int `url:"category_id,omitempty"`
+
+	// StatusID filters hardware list results by status label
+	StatusID int `url:"status_id,omitempty"`
+
+	// LocationID filters hardware list results by location
+	LocationID int `url:"location_id,omitempty"`
 }
 
 // Asset represents a Snipe-IT hardware asset.
