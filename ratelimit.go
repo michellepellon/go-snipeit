@@ -466,3 +466,56 @@ func (a *AdaptiveRateLimiter) Snapshot() (RateLimit, float64) {
 	defer a.mu.Unlock()
 	return a.last, a.rate
 }
+
+// RateLimitPreset is a Snipe-IT Cloud plan's published request allowance,
+// so callers can pick a plan by name instead of hand-computing a rate.
+type RateLimitPreset struct {
+	// Name is the plan's config-file identifier, e.g. "small_business".
+	Name string
+
+	// RequestsPerMinute is the plan's allowance, or 0 when the plan is
+	// unmetered.
+	RequestsPerMinute int
+
+	// Burst is how many requests may be made back to back before pacing
+	// kicks in.
+	Burst int
+}
+
+// Snipe-IT Cloud plan allowances. A preset only sets the ceiling: the limiter
+// it builds still tightens its pace from the server's X-Ratelimit-* headers,
+// so a plan change or a shared token cannot push the client into 429s.
+var (
+	// PresetBasic is the Basic plan: 120 requests per minute.
+	PresetBasic = RateLimitPreset{Name: "basic", RequestsPerMinute: 120, Burst: 5}
+
+	// PresetSmallBusiness is the Small Business plan: 240 requests per minute.
+	PresetSmallBusiness = RateLimitPreset{Name: "small_business", RequestsPerMinute: 240, Burst: 10}
+
+	// PresetDedicated is a dedicated instance, which enforces no limit.
+	PresetDedicated = RateLimitPreset{Name: "dedicated"}
+)
+
+// Limiter builds the RateLimiter for the preset, ready to hand to
+// ClientOptions.RateLimiter. It returns nil for an unmetered preset, which the
+// client treats as "no rate limiting".
+func (p RateLimitPreset) Limiter() RateLimiter {
+	if p.RequestsPerMinute <= 0 {
+		return nil
+	}
+	return NewAdaptiveRateLimiter(float64(p.RequestsPerMinute)/60, p.Burst)
+}
+
+// PresetByName looks up a plan preset by its config-file name, matching
+// case-insensitively and accepting "-" or nothing in place of the "_".
+func PresetByName(name string) (RateLimitPreset, bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "basic":
+		return PresetBasic, true
+	case "small_business", "small-business", "smallbusiness":
+		return PresetSmallBusiness, true
+	case "dedicated":
+		return PresetDedicated, true
+	}
+	return RateLimitPreset{}, false
+}
