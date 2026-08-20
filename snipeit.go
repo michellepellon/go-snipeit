@@ -38,6 +38,7 @@ import (
     "net/url"
     "reflect"
     "strings"
+    "sync"
     "time"
 
     "github.com/google/go-querystring/query"
@@ -99,6 +100,46 @@ type Client struct {
 
     // Logger for debug logging of requests and responses
     logger Logger
+
+    // onRateLimit is called with every response's rate-limit snapshot
+    onRateLimit func(RateLimit)
+
+    // rateLimit holds the most recent rate-limit snapshot, guarded by rateLimitMu
+    rateLimitMu sync.RWMutex
+    rateLimit   RateLimit
+}
+
+// RateLimit returns the rate-limit state advertised by the most recent
+// response, so callers can log how much of the instance's budget is left or
+// pause their own work before the client has to. RateLimit.Valid is false
+// until a response carrying X-Ratelimit-* headers has been received.
+func (c *Client) RateLimit() RateLimit {
+    c.rateLimitMu.RLock()
+    defer c.rateLimitMu.RUnlock()
+    return c.rateLimit
+}
+
+// observeRateLimit records a response's rate-limit headers, feeds them to an
+// adaptive rate limiter, and invokes the OnRateLimit callback.
+func (c *Client) observeRateLimit(resp *http.Response) RateLimit {
+    if resp == nil {
+        return RateLimit{}
+    }
+    rl, ok := ParseRateLimit(resp.Header)
+    if !ok {
+        return rl
+    }
+    c.rateLimitMu.Lock()
+    c.rateLimit = rl
+    c.rateLimitMu.Unlock()
+
+    if observer, isObserver := c.rateLimiter.(RateLimitObserver); isObserver {
+        observer.Observe(rl)
+    }
+    if c.onRateLimit != nil {
+        c.onRateLimit(rl)
+    }
+    return rl
 }
 
 // NewClient returns a new Snipe-IT API client.
@@ -195,6 +236,9 @@ func NewClientWithOptions(baseURL, token string, options *ClientOptions) (*Clien
     // Configure logger
     c.logger = options.Logger
 
+    // Configure rate-limit observation
+    c.onRateLimit = options.OnRateLimit
+
     // Initialize services
     c.Assets = &AssetsService{client: c}
     c.Locations = &LocationsService{client: c}
@@ -232,13 +276,9 @@ func (c *Client) DoWithOptions(req *http.Request, v interface{}, opts *RequestOp
     
     req = req.WithContext(ctx)
     
-    // Apply rate limiting if configured
-    if c.rateLimiter != nil {
-        if err := c.rateLimiter.Wait(ctx); err != nil {
-            return nil, err
-        }
-    }
-    
+    // Rate limiting is applied per attempt inside doOnce, so retries are paced
+    // too instead of bursting past the limiter.
+
     // Determine if retries are enabled for this request
     disableRetries := c.disableRetries
     if opts != nil && opts.DisableRetries {
@@ -265,7 +305,7 @@ func (c *Client) DoWithOptions(req *http.Request, v interface{}, opts *RequestOp
     // Retry loop
     for retries := 0; retries < retryPolicy.MaxRetries; retries++ {
         // Check if we should retry
-        shouldRetry, retryAfter = c.shouldRetry(resp, err, retryPolicy)
+        shouldRetry, retryAfter = c.shouldRetry(req, resp, err, retryPolicy)
         if !shouldRetry {
             break
         }
@@ -335,7 +375,20 @@ func (c *Client) doOnce(ctx context.Context, req *http.Request, v interface{}) (
         c.logger.LogRequest(req.Method, req.URL.String(), reqBody)
     }
 
+    // Apply rate limiting if configured. This sits in doOnce so every attempt
+    // — including retries — is paced.
+    if c.rateLimiter != nil {
+        if err := c.rateLimiter.Wait(ctx); err != nil {
+            return nil, err
+        }
+    }
+
     resp, err := c.client.Do(req)
+    if resp != nil {
+        // Record the server's advertised budget before anything can return,
+        // so a 429 still updates the limiter and the OnRateLimit callback.
+        c.observeRateLimit(resp)
+    }
     if err != nil {
         // If the error is due to context cancellation or deadline exceeded,
         // return that specific error
@@ -383,41 +436,76 @@ func (c *Client) doOnce(ctx context.Context, req *http.Request, v interface{}) (
 }
 
 // shouldRetry determines if a request should be retried based on the response, error, and retry policy.
-func (c *Client) shouldRetry(resp *http.Response, err error, policy *RetryPolicy) (bool, time.Duration) {
+func (c *Client) shouldRetry(req *http.Request, resp *http.Response, err error, policy *RetryPolicy) (bool, time.Duration) {
     // Don't retry if there's no error and the response is in the 2xx range
     if err == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
         return false, 0
     }
-    
-    // Check for retryable status codes
+
     if resp != nil && policy.RetryableStatusCodes[resp.StatusCode] {
-        // Check for Retry-After header
-        if retryAfter := resp.Header.Get("Retry-After"); retryAfter != "" {
-            // Try to parse as seconds
-            if seconds, err := time.ParseDuration(retryAfter + "s"); err == nil {
-                return true, seconds
-            }
-            
-            // Try to parse as HTTP date
-            if date, err := time.Parse(time.RFC1123, retryAfter); err == nil {
-                delay := time.Until(date)
-                if delay > 0 {
-                    return true, delay
-                }
-            }
+        // A 429 was rejected before the request was processed, so it is always
+        // safe to repeat regardless of method.
+        if resp.StatusCode != http.StatusTooManyRequests && !policy.retryableMethod(req) {
+            return false, 0
         }
-        return true, 0
+        return true, policy.capWait(retryWait(resp))
     }
-    
-    // Retry on network errors, except for context cancellation
+
+    // Retry network errors, except for context cancellation. A transport error
+    // gives no proof the server did not process the request, so non-idempotent
+    // methods are not replayed.
     if err != nil {
         if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
             return false, 0
         }
-        return true, 0
+        return policy.retryableMethod(req), 0
     }
-    
+
     return false, 0
+}
+
+// retryWait reports how long the server asked the client to wait, preferring
+// Retry-After and falling back to the time until the rate-limit window resets.
+// Zero means "use the client's backoff".
+func retryWait(resp *http.Response) time.Duration {
+    rl, ok := ParseRateLimit(resp.Header)
+    if !ok {
+        return 0
+    }
+    if rl.RetryAfter > 0 {
+        return rl.RetryAfter
+    }
+    if resp.StatusCode == http.StatusTooManyRequests {
+        if !rl.ResetAt.IsZero() {
+            if d := time.Until(rl.ResetAt); d > 0 {
+                return d
+            }
+        }
+        return rl.Reset
+    }
+    return 0
+}
+
+// retryableMethod reports whether a request may be replayed after a failure
+// that might have been processed by the server.
+func (p *RetryPolicy) retryableMethod(req *http.Request) bool {
+    if req == nil {
+        return false
+    }
+    methods := p.RetryMethods
+    if methods == nil {
+        methods = defaultRetryMethods
+    }
+    return methods[strings.ToUpper(req.Method)]
+}
+
+// capWait clamps a server-provided wait to MaxBackoff so one large (or
+// malformed-but-numeric) Retry-After cannot stall a client for hours.
+func (p *RetryPolicy) capWait(d time.Duration) time.Duration {
+    if p.MaxBackoff > 0 && d > p.MaxBackoff {
+        return p.MaxBackoff
+    }
+    return d
 }
 
 // newRequest creates an API request.

@@ -5,6 +5,8 @@ import (
 	"context"
 	"math"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -101,6 +103,17 @@ type RetryPolicy struct {
 	// from retrying in lockstep. It's a value between 0 and 1, where 0 means no jitter
 	// and 1 means the backoff can be anywhere from 0 to the calculated backoff time.
 	Jitter float64
+
+	// RetryMethods limits which HTTP methods may be replayed after a failure
+	// the server may already have processed — a 5xx response or a transport
+	// error. HTTP 429 is exempt: the request was rejected before processing,
+	// so it is retried for every method.
+	//
+	// If nil, the safe RFC 9110 idempotent methods are used (GET, HEAD,
+	// OPTIONS, PUT, DELETE). Add POST or PATCH only if the API calls they
+	// carry are idempotent in your usage; replaying them can otherwise create
+	// duplicate records.
+	RetryMethods map[string]bool
 }
 
 // DefaultRetryPolicy returns the default retry policy.
@@ -119,6 +132,16 @@ func DefaultRetryPolicy() *RetryPolicy {
 		BackoffMultiplier: defaultBackoffMultiplier,
 		Jitter:            defaultJitter,
 	}
+}
+
+// defaultRetryMethods are the methods replayed after a 5xx or transport error
+// when RetryPolicy.RetryMethods is nil.
+var defaultRetryMethods = map[string]bool{
+	http.MethodGet:     true,
+	http.MethodHead:    true,
+	http.MethodOptions: true,
+	http.MethodPut:     true,
+	http.MethodDelete:  true,
 }
 
 // Default values for rate limiting and retry
@@ -166,6 +189,12 @@ type ClientOptions struct {
 	// Logger enables debug logging of HTTP requests and responses.
 	// If nil, no logging is performed.
 	Logger Logger
+
+	// OnRateLimit, if set, is called with the rate-limit snapshot parsed from
+	// every response that carries X-Ratelimit-* headers. Use it to log or
+	// export how much of the instance's budget remains. It runs on the
+	// request's goroutine, so it must not block.
+	OnRateLimit func(RateLimit)
 }
 
 // RequestOptions contains options for individual API requests.
@@ -177,4 +206,263 @@ type RequestOptions struct {
 	// DisableRetries, if true, disables automatic retries for this request,
 	// regardless of the client's retry configuration.
 	DisableRetries bool
+}
+
+// RateLimit is a snapshot of the server's rate-limit state, parsed from the
+// response headers Snipe-IT sends on every API request:
+//
+//	X-Ratelimit-Limit            requests allowed per window
+//	X-Ratelimit-Remaining        requests left in the current window
+//	X-Ratelimit-Reset            seconds until the window resets
+//	X-Ratelimit-Reset-Timestamp  unix timestamp of the reset
+//	Retry-After                  seconds to wait (sent with 429 responses)
+//
+// Snipe-IT Cloud plans differ in their per-minute allowance, so reading these
+// headers is the only reliable way for a client to pace itself.
+type RateLimit struct {
+	// Limit is the number of requests allowed per window (0 if not advertised).
+	Limit int
+
+	// Remaining is the number of requests left in the current window.
+	Remaining int
+
+	// Reset is the time until the current window resets (0 if not advertised).
+	Reset time.Duration
+
+	// ResetAt is the absolute time the window resets, from
+	// X-Ratelimit-Reset-Timestamp. Zero if the header is absent or unparseable.
+	ResetAt time.Time
+
+	// RetryAfter is the server-requested wait from the Retry-After header.
+	// Zero if the header is absent, an HTTP-date, or negative.
+	RetryAfter time.Duration
+
+	// Observed is the time the snapshot was taken.
+	Observed time.Time
+
+	// Valid reports whether any rate-limit header was present.
+	Valid bool
+}
+
+// Exhausted reports whether the advertised budget for the current window is
+// used up, i.e. further requests will be rejected with HTTP 429 until Reset.
+func (r RateLimit) Exhausted() bool { return r.Valid && r.Limit > 0 && r.Remaining <= 0 }
+
+// ParseRateLimit extracts the rate-limit state from a response's headers. The
+// returned bool (mirrored by RateLimit.Valid) is false when the response
+// carried none of the headers, e.g. a Snipe-IT instance with rate limiting
+// disabled or a non-Snipe intermediary's error page.
+func ParseRateLimit(h http.Header) (RateLimit, bool) {
+	rl := RateLimit{Observed: time.Now()}
+	if v, ok := headerInt(h, "X-Ratelimit-Limit"); ok {
+		rl.Limit, rl.Valid = v, true
+	}
+	if v, ok := headerInt(h, "X-Ratelimit-Remaining"); ok {
+		rl.Remaining, rl.Valid = v, true
+	}
+	if v, ok := headerInt(h, "X-Ratelimit-Reset"); ok && v >= 0 {
+		rl.Reset, rl.Valid = time.Duration(v)*time.Second, true
+	}
+	if v, ok := headerInt(h, "X-Ratelimit-Reset-Timestamp"); ok && v > 0 {
+		rl.ResetAt, rl.Valid = time.Unix(int64(v), 0), true
+	}
+	if d, ok := retryAfter(h); ok {
+		rl.RetryAfter, rl.Valid = d, true
+	}
+	return rl, rl.Valid
+}
+
+// headerInt reads a header as a base-10 integer.
+func headerInt(h http.Header, name string) (int, bool) {
+	raw := strings.TrimSpace(h.Get(name))
+	if raw == "" {
+		return 0, false
+	}
+	v, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+// retryAfter parses a Retry-After header in either of its RFC 9110 forms:
+// delta-seconds (Snipe-IT sends this) or an HTTP-date. A negative delta or a
+// date already in the past yields zero. The bool reports whether a usable
+// value was present, so callers can distinguish "wait 0s" from "no header".
+func retryAfter(h http.Header) (time.Duration, bool) {
+	raw := strings.TrimSpace(h.Get("Retry-After"))
+	if raw == "" {
+		return 0, false
+	}
+	if secs, err := strconv.Atoi(raw); err == nil {
+		if secs < 0 {
+			return 0, true
+		}
+		return time.Duration(secs) * time.Second, true
+	}
+	if t, err := http.ParseTime(raw); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d, true
+		}
+		return 0, true
+	}
+	return 0, false
+}
+
+// RateLimitObserver is implemented by rate limiters that adapt to the limits
+// the server advertises. A client feeds every response's rate-limit snapshot
+// to its limiter when the limiter implements this interface.
+type RateLimitObserver interface {
+	Observe(RateLimit)
+}
+
+// AdaptiveRateLimiter paces requests at a configured rate and then tightens
+// that rate using the server's own X-Ratelimit-* headers, so a client stays
+// under the instance's budget instead of discovering it through 429s.
+//
+// It behaves as a token bucket at the configured rate until the first response
+// is observed. From then on the pace is the lower of the configured rate and
+// the rate that spreads the remaining requests evenly over the rest of the
+// window. When the window's budget is exhausted (or the server sends a
+// Retry-After), Wait blocks until the window resets.
+type AdaptiveRateLimiter struct {
+	mu sync.Mutex
+
+	baseRate  float64 // configured requests per second
+	rate      float64 // current effective requests per second
+	tokens    float64
+	maxTokens float64
+	lastFill  time.Time
+
+	// notBefore holds requests until the current window resets, set when the
+	// budget is exhausted or the server asks for a Retry-After wait.
+	notBefore time.Time
+
+	// last is the most recent observation, exposed via Snapshot for callers
+	// that want to log or export the server's view.
+	last RateLimit
+
+	// now is time.Now, overridable in tests.
+	now func() time.Time
+}
+
+// NewAdaptiveRateLimiter creates a limiter that starts at requestsPerSecond
+// with the given burst size and adapts to the server's advertised limits.
+//
+// Pick requestsPerSecond from the instance's plan (Snipe-IT Cloud publishes a
+// per-minute allowance); the limiter only ever paces slower than this value,
+// never faster, so a conservative starting point is safe.
+func NewAdaptiveRateLimiter(requestsPerSecond float64, burstSize int) *AdaptiveRateLimiter {
+	if requestsPerSecond <= 0 {
+		requestsPerSecond = float64(defaultMaxRequestsPerSecond)
+	}
+	if burstSize <= 0 {
+		burstSize = defaultBurstSize
+	}
+	return &AdaptiveRateLimiter{
+		baseRate:  requestsPerSecond,
+		rate:      requestsPerSecond,
+		tokens:    float64(burstSize),
+		maxTokens: float64(burstSize),
+		lastFill:  time.Now(),
+		now:       time.Now,
+	}
+}
+
+// Wait blocks until the next request may be made or ctx is canceled.
+func (a *AdaptiveRateLimiter) Wait(ctx context.Context) error {
+	for {
+		wait := a.reserve()
+		if wait <= 0 {
+			return nil
+		}
+		timer := time.NewTimer(wait)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		}
+	}
+}
+
+// reserve consumes a token if one is available and reports how long the caller
+// must wait before trying again.
+func (a *AdaptiveRateLimiter) reserve() time.Duration {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	now := a.now()
+	if now.Before(a.notBefore) {
+		return a.notBefore.Sub(now)
+	}
+
+	elapsed := now.Sub(a.lastFill).Seconds()
+	if elapsed > 0 {
+		a.tokens = math.Min(a.maxTokens, a.tokens+elapsed*a.rate)
+		a.lastFill = now
+	}
+	if a.tokens >= 1 {
+		a.tokens--
+		return 0
+	}
+	return time.Duration((1 - a.tokens) / a.rate * float64(time.Second))
+}
+
+// Observe folds a response's rate-limit snapshot into the pace. It is safe to
+// call concurrently and ignores snapshots with no usable headers.
+func (a *AdaptiveRateLimiter) Observe(rl RateLimit) {
+	if !rl.Valid {
+		return
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.last = rl
+	now := a.now()
+
+	// A server-requested wait always wins: it is the only signal that reflects
+	// state this client cannot see (other tokens sharing the same budget).
+	if rl.RetryAfter > 0 {
+		a.holdUntil(now.Add(rl.RetryAfter))
+	}
+
+	reset := rl.Reset
+	if !rl.ResetAt.IsZero() {
+		// Prefer the absolute timestamp; it stays correct while a request is
+		// in flight. Ignore it when it has already passed.
+		if d := rl.ResetAt.Sub(now); d > 0 {
+			reset = d
+		}
+	}
+
+	if rl.Exhausted() && reset > 0 {
+		a.holdUntil(now.Add(reset))
+		return
+	}
+	if rl.Limit <= 0 || reset <= 0 || rl.Remaining <= 0 {
+		return
+	}
+
+	// Spread what is left over the rest of the window, but never speed up past
+	// the configured rate.
+	a.rate = math.Min(a.baseRate, float64(rl.Remaining)/reset.Seconds())
+}
+
+// holdUntil blocks new requests until t and drains the burst so the window
+// does not reopen with a full bucket.
+func (a *AdaptiveRateLimiter) holdUntil(t time.Time) {
+	if t.After(a.notBefore) {
+		a.notBefore = t
+	}
+	a.tokens = 0
+	a.lastFill = t
+	a.rate = a.baseRate
+}
+
+// Snapshot returns the most recent observation and the pace the limiter is
+// currently enforcing, for logging and metrics.
+func (a *AdaptiveRateLimiter) Snapshot() (RateLimit, float64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.last, a.rate
 }
