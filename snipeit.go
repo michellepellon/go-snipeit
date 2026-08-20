@@ -79,6 +79,9 @@ type Client struct {
     // Users is the service for interacting with the users endpoint
     Users *UsersService
 
+    // Licenses is the service for interacting with the licenses endpoint
+    Licenses *LicensesService
+
     // Suppliers is the service for interacting with the suppliers endpoint
     Suppliers *SuppliersService
 
@@ -203,6 +206,7 @@ func NewClientWithOptions(baseURL, token string, options *ClientOptions) (*Clien
     c.Fieldsets = &FieldsetsService{client: c}
     c.Models = &ModelsService{client: c}
     c.Users = &UsersService{client: c}
+    c.Licenses = &LicensesService{client: c}
     c.Suppliers = &SuppliersService{client: c}
     c.Categories = &CategoriesService{client: c}
     c.Manufacturers = &ManufacturersService{client: c}
