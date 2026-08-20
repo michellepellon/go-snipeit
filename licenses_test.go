@@ -144,3 +144,24 @@ func TestLicenseSeatsAndCheckout(t *testing.T) {
 		t.Errorf("checkin asset_id = %v (present=%v), want null", v, ok)
 	}
 }
+
+// Licenses live under a category of type "license", which the API reports and
+// accepts as category_type.
+func TestCategoryTypeRoundTrips(t *testing.T) {
+	var got Category
+	if err := json.Unmarshal([]byte(`{"id":7,"name":"Software","category_type":"license"}`), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.CategoryType != "license" {
+		t.Errorf("category_type = %q, want license", got.CategoryType)
+	}
+	b, err := json.Marshal(Category{CommonFields: CommonFields{Name: "Software"}, CategoryType: "license"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]interface{}
+	_ = json.Unmarshal(b, &m)
+	if m["category_type"] != "license" {
+		t.Errorf("marshaled category = %v, want category_type=license", m)
+	}
+}

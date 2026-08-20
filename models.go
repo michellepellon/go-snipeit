@@ -632,6 +632,11 @@ type Category struct {
 	
 	// Type of category (e.g., "asset", "accessory", "consumable", "component")
 	Type          string `json:"type"`
+
+	// CategoryType is the field the API actually uses for the kind of category
+	// ("asset", "accessory", "consumable", "component", "license"), both in
+	// list responses and on create. Type is left in place for compatibility.
+	CategoryType  string `json:"category_type,omitempty"`
 	
 	// EULA indicates if this category requires a EULA acceptance
 	EULA          FlexBool `json:"eula,omitempty"`
