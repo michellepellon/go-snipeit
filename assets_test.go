@@ -177,6 +177,35 @@ func TestAssetsList(t *testing.T) {
 	}
 }
 
+func TestAssetsList_HardwareFilters(t *testing.T) {
+	client, mux, _, teardown := setup()
+	defer teardown()
+
+	mux.HandleFunc("/api/v1/hardware", func(w http.ResponseWriter, r *http.Request) {
+		testMethod(t, r, http.MethodGet)
+		q := r.URL.Query()
+		if q.Get("category_id") != "2" {
+			t.Errorf("category_id = %q, expected %q", q.Get("category_id"), "2")
+		}
+		if q.Get("status_id") != "22" {
+			t.Errorf("status_id = %q, expected %q", q.Get("status_id"), "22")
+		}
+		if q.Get("location_id") != "1" {
+			t.Errorf("location_id = %q, expected %q", q.Get("location_id"), "1")
+		}
+		fmt.Fprint(w, `{"status":"success","total":0,"count":0,"rows":[]}`)
+	})
+
+	_, _, err := client.Assets.ListContext(context.Background(), &ListOptions{
+		CategoryID: 2,
+		StatusID:   22,
+		LocationID: 1,
+	})
+	if err != nil {
+		t.Fatalf("Assets.ListContext returned error: %v", err)
+	}
+}
+
 func TestAssetsGet(t *testing.T) {
 	client, mux, _, teardown := setup()
 	defer teardown()
