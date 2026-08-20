@@ -259,18 +259,21 @@ func (s *LicensesService) ListContext(ctx context.Context, opts *ListOptions) (*
 }
 
 // Get fetches a single license by its ID.
-func (s *LicensesService) Get(id int) (*LicenseResponse, *http.Response, error) {
+//
+// Unlike the create and update endpoints, this one returns the license object
+// itself rather than a {status, payload} envelope, so it returns a *License.
+func (s *LicensesService) Get(id int) (*License, *http.Response, error) {
 	return s.GetContext(context.Background(), id)
 }
 
 // GetContext fetches a single license by its ID with the provided context.
-func (s *LicensesService) GetContext(ctx context.Context, id int) (*LicenseResponse, *http.Response, error) {
+func (s *LicensesService) GetContext(ctx context.Context, id int) (*License, *http.Response, error) {
 	req, err := s.client.newRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("api/v1/licenses/%d", id), nil)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	var license LicenseResponse
+	var license License
 	resp, err := s.client.Do(req, &license)
 	if err != nil {
 		return nil, resp, err

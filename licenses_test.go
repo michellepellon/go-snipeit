@@ -165,3 +165,25 @@ func TestCategoryTypeRoundTrips(t *testing.T) {
 		t.Errorf("marshaled category = %v, want category_type=license", m)
 	}
 }
+
+// GET /licenses/{id} returns the license itself, not a {status, payload}
+// envelope like create/update do.
+func TestLicenseGetReturnsBareObject(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":7,"name":"Google Workspace","seats":10000}`))
+	}))
+	defer srv.Close()
+
+	c, err := NewClient(srv.URL, "tok")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lic, _, err := c.Licenses.Get(7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lic.ID != 7 || lic.Seats != 10000 {
+		t.Errorf("license = %+v, want id 7 with 10000 seats", lic)
+	}
+}
