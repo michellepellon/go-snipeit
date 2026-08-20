@@ -184,3 +184,58 @@ func TestRetryMethodIdempotency(t *testing.T) {
 		t.Errorf("reset-based wait = %s, want 7s", wait)
 	}
 }
+
+// Snipe-IT sends Retry-After on EVERY response, including 200s, where it means
+// "when the current window rolls over" — not "stop until then". Honoring it
+// unconditionally parks the limiter for a full window after each successful
+// request, turning a paged read into one request per minute.
+func TestAdaptiveRateLimiterIgnoresRetryAfterOnSuccess(t *testing.T) {
+	now := time.Now()
+	l := NewAdaptiveRateLimiter(4, 5)
+	l.now = func() time.Time { return now }
+
+	l.Observe(RateLimit{
+		Valid: true, StatusCode: http.StatusOK,
+		Limit: 240, Remaining: 239, Reset: 59 * time.Second, RetryAfter: 58 * time.Second,
+	})
+	if wait := l.reserve(); wait != 0 {
+		t.Fatalf("a 200 response with Retry-After parked the limiter for %s", wait)
+	}
+
+	// A 429's Retry-After still holds: that one really is "do not send yet".
+	l.Observe(RateLimit{
+		Valid: true, StatusCode: http.StatusTooManyRequests,
+		Limit: 240, Remaining: 0, Reset: 30 * time.Second, RetryAfter: 30 * time.Second,
+	})
+	if wait := l.reserve(); wait < 29*time.Second {
+		t.Fatalf("429 Retry-After must hold, waited %s", wait)
+	}
+}
+
+// The client records the status alongside the headers, so the limiter can tell
+// a throttled response from a successful one.
+func TestObservedRateLimitCarriesStatus(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Ratelimit-Limit", "240")
+		w.Header().Set("X-Ratelimit-Remaining", "239")
+		w.Header().Set("Retry-After", "58")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"total":0,"rows":[]}`))
+	}))
+	defer srv.Close()
+
+	limiter := NewAdaptiveRateLimiter(4, 5)
+	c, err := NewClientWithOptions(srv.URL, "tok", &ClientOptions{RateLimiter: limiter})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := c.Assets.List(&ListOptions{Limit: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if got := c.RateLimit().StatusCode; got != http.StatusOK {
+		t.Errorf("observed status = %d, want 200", got)
+	}
+	if wait := limiter.reserve(); wait != 0 {
+		t.Errorf("a successful response held the limiter for %s", wait)
+	}
+}

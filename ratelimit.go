@@ -235,7 +235,16 @@ type RateLimit struct {
 
 	// RetryAfter is the server-requested wait from the Retry-After header.
 	// Zero if the header is absent, an HTTP-date, or negative.
+	//
+	// Snipe-IT sends this header on EVERY response, not only on a 429, where
+	// it describes when the current window rolls over rather than asking the
+	// client to stop. Only treat it as a demand to wait when StatusCode says
+	// the request was actually rejected — see RetryAfterIsBinding.
 	RetryAfter time.Duration
+
+	// StatusCode is the status of the response the snapshot came from, or 0
+	// when the snapshot was parsed from bare headers.
+	StatusCode int
 
 	// Observed is the time the snapshot was taken.
 	Observed time.Time
@@ -248,10 +257,32 @@ type RateLimit struct {
 // used up, i.e. further requests will be rejected with HTTP 429 until Reset.
 func (r RateLimit) Exhausted() bool { return r.Valid && r.Limit > 0 && r.Remaining <= 0 }
 
+// RetryAfterIsBinding reports whether Retry-After is the server telling the
+// client to stop, rather than incidental window information attached to a
+// response that succeeded.
+func (r RateLimit) RetryAfterIsBinding() bool {
+	return r.RetryAfter > 0 && r.StatusCode >= 400
+}
+
+// ParseRateLimitResponse extracts the rate-limit state from a response,
+// recording its status so callers can tell a throttled response from a
+// successful one that merely carries window information.
+func ParseRateLimitResponse(resp *http.Response) (RateLimit, bool) {
+	if resp == nil {
+		return RateLimit{}, false
+	}
+	rl, ok := ParseRateLimit(resp.Header)
+	rl.StatusCode = resp.StatusCode
+	return rl, ok
+}
+
 // ParseRateLimit extracts the rate-limit state from a response's headers. The
 // returned bool (mirrored by RateLimit.Valid) is false when the response
 // carried none of the headers, e.g. a Snipe-IT instance with rate limiting
 // disabled or a non-Snipe intermediary's error page.
+//
+// Prefer ParseRateLimitResponse when the response is at hand: a Retry-After
+// value cannot be interpreted without knowing the status it arrived with.
 func ParseRateLimit(h http.Header) (RateLimit, bool) {
 	rl := RateLimit{Observed: time.Now()}
 	if v, ok := headerInt(h, "X-Ratelimit-Limit"); ok {
@@ -420,9 +451,12 @@ func (a *AdaptiveRateLimiter) Observe(rl RateLimit) {
 	a.last = rl
 	now := a.now()
 
-	// A server-requested wait always wins: it is the only signal that reflects
-	// state this client cannot see (other tokens sharing the same budget).
-	if rl.RetryAfter > 0 {
+	// A server-requested wait wins when the server actually rejected the
+	// request: it is the only signal reflecting state this client cannot see,
+	// such as another token spending the same budget. On a successful response
+	// the same header just describes the window, so holding for it would idle
+	// the client for a full window after every request.
+	if rl.RetryAfterIsBinding() {
 		a.holdUntil(now.Add(rl.RetryAfter))
 	}
 

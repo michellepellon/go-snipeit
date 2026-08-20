@@ -125,7 +125,7 @@ func (c *Client) observeRateLimit(resp *http.Response) RateLimit {
     if resp == nil {
         return RateLimit{}
     }
-    rl, ok := ParseRateLimit(resp.Header)
+    rl, ok := ParseRateLimitResponse(resp)
     if !ok {
         return rl
     }
@@ -474,7 +474,7 @@ func (c *Client) shouldRetry(req *http.Request, resp *http.Response, err error, 
 // The bool reports whether the server gave any guidance at all, so an explicit
 // "Retry-After: 0" retries immediately instead of falling back to the backoff.
 func retryWait(resp *http.Response) (time.Duration, bool) {
-    rl, ok := ParseRateLimit(resp.Header)
+    rl, ok := ParseRateLimitResponse(resp)
     if !ok {
         return 0, false
     }
