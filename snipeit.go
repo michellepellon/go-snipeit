@@ -295,6 +295,7 @@ func (c *Client) DoWithOptions(req *http.Request, v interface{}, opts *RequestOp
     var err error
     var shouldRetry bool
     var retryAfter time.Duration
+    var serverDirected bool
     
     retryPolicy := c.retryPolicy
     backoff := retryPolicy.InitialBackoff
@@ -305,7 +306,7 @@ func (c *Client) DoWithOptions(req *http.Request, v interface{}, opts *RequestOp
     // Retry loop
     for retries := 0; retries < retryPolicy.MaxRetries; retries++ {
         // Check if we should retry
-        shouldRetry, retryAfter = c.shouldRetry(req, resp, err, retryPolicy)
+        shouldRetry, retryAfter, serverDirected = c.shouldRetry(req, resp, err, retryPolicy)
         if !shouldRetry {
             break
         }
@@ -315,7 +316,7 @@ func (c *Client) DoWithOptions(req *http.Request, v interface{}, opts *RequestOp
         //    req.URL.String(), err, retries+1, retryPolicy.MaxRetries)
         
         // Wait before retrying
-        if retryAfter > 0 {
+        if serverDirected {
             // Use the Retry-After header value
             waitTime := retryAfter
             select {
@@ -436,19 +437,23 @@ func (c *Client) doOnce(ctx context.Context, req *http.Request, v interface{}) (
 }
 
 // shouldRetry determines if a request should be retried based on the response, error, and retry policy.
-func (c *Client) shouldRetry(req *http.Request, resp *http.Response, err error, policy *RetryPolicy) (bool, time.Duration) {
+// shouldRetry reports whether to retry, how long the server asked the client to
+// wait, and whether that wait came from the server at all — a server-directed
+// wait of zero means "retry now" and must not be mistaken for "no guidance".
+func (c *Client) shouldRetry(req *http.Request, resp *http.Response, err error, policy *RetryPolicy) (bool, time.Duration, bool) {
     // Don't retry if there's no error and the response is in the 2xx range
     if err == nil && resp != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
-        return false, 0
+        return false, 0, false
     }
 
     if resp != nil && policy.RetryableStatusCodes[resp.StatusCode] {
         // A 429 was rejected before the request was processed, so it is always
         // safe to repeat regardless of method.
         if resp.StatusCode != http.StatusTooManyRequests && !policy.retryableMethod(req) {
-            return false, 0
+            return false, 0, false
         }
-        return true, policy.capWait(retryWait(resp))
+        wait, ok := retryWait(resp)
+        return true, policy.capWait(wait), ok
     }
 
     // Retry network errors, except for context cancellation. A transport error
@@ -456,34 +461,37 @@ func (c *Client) shouldRetry(req *http.Request, resp *http.Response, err error, 
     // methods are not replayed.
     if err != nil {
         if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-            return false, 0
+            return false, 0, false
         }
-        return policy.retryableMethod(req), 0
+        return policy.retryableMethod(req), 0, false
     }
 
-    return false, 0
+    return false, 0, false
 }
 
 // retryWait reports how long the server asked the client to wait, preferring
 // Retry-After and falling back to the time until the rate-limit window resets.
-// Zero means "use the client's backoff".
-func retryWait(resp *http.Response) time.Duration {
+// The bool reports whether the server gave any guidance at all, so an explicit
+// "Retry-After: 0" retries immediately instead of falling back to the backoff.
+func retryWait(resp *http.Response) (time.Duration, bool) {
     rl, ok := ParseRateLimit(resp.Header)
     if !ok {
-        return 0
+        return 0, false
     }
-    if rl.RetryAfter > 0 {
-        return rl.RetryAfter
+    if resp.Header.Get("Retry-After") != "" {
+        return rl.RetryAfter, true
     }
-    if resp.StatusCode == http.StatusTooManyRequests {
+    if resp.StatusCode == http.StatusTooManyRequests && rl.Valid {
         if !rl.ResetAt.IsZero() {
             if d := time.Until(rl.ResetAt); d > 0 {
-                return d
+                return d, true
             }
         }
-        return rl.Reset
+        if rl.Reset > 0 {
+            return rl.Reset, true
+        }
     }
-    return 0
+    return 0, false
 }
 
 // retryableMethod reports whether a request may be replayed after a failure

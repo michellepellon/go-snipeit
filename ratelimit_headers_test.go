@@ -149,30 +149,38 @@ func TestRetryMethodIdempotency(t *testing.T) {
 	get := httptest.NewRequest(http.MethodGet, "/api/v1/hardware", nil)
 	fail := &http.Response{StatusCode: http.StatusInternalServerError, Header: http.Header{}}
 
-	if retry, _ := c.shouldRetry(post, fail, nil, policy); retry {
+	if retry, _, _ := c.shouldRetry(post, fail, nil, policy); retry {
 		t.Error("POST must not be replayed after a 500")
 	}
-	if retry, _ := c.shouldRetry(get, fail, nil, policy); !retry {
+	if retry, _, _ := c.shouldRetry(get, fail, nil, policy); !retry {
 		t.Error("GET must be retried after a 500")
 	}
 
 	limited := &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}}
 	limited.Header.Set("Retry-After", "3")
-	retry, wait := c.shouldRetry(post, limited, nil, policy)
+	retry, wait, _ := c.shouldRetry(post, limited, nil, policy)
 	if !retry || wait != 3*time.Second {
 		t.Errorf("429 POST: retry=%v wait=%s, want true/3s", retry, wait)
 	}
 
 	// Retry-After is clamped to MaxBackoff.
 	limited.Header.Set("Retry-After", "86400")
-	if _, wait := c.shouldRetry(get, limited, nil, policy); wait != policy.MaxBackoff {
+	if _, wait, _ := c.shouldRetry(get, limited, nil, policy); wait != policy.MaxBackoff {
 		t.Errorf("clamped wait = %s, want %s", wait, policy.MaxBackoff)
+	}
+
+	// An explicit "Retry-After: 0" means retry now, not "fall back to backoff".
+	zero := &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}}
+	zero.Header.Set("Retry-After", "0")
+	retry, wait, directed := c.shouldRetry(get, zero, nil, policy)
+	if !retry || wait != 0 || !directed {
+		t.Errorf("Retry-After 0: retry=%v wait=%s serverDirected=%v, want true/0s/true", retry, wait, directed)
 	}
 
 	// With no Retry-After, a 429 falls back to the reset window.
 	reset := &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}}
 	reset.Header.Set("X-Ratelimit-Reset", "7")
-	if _, wait := c.shouldRetry(get, reset, nil, policy); wait != 7*time.Second {
+	if _, wait, _ := c.shouldRetry(get, reset, nil, policy); wait != 7*time.Second {
 		t.Errorf("reset-based wait = %s, want 7s", wait)
 	}
 }
